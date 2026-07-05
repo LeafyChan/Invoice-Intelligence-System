@@ -1,0 +1,20 @@
+{
+  "document_type_label": "Goods Receipt Note (GRN)",
+  "required_fields": [
+    "grn_number", "grn_date",
+    "po_number", "waybill_number",
+    "vendor_name", "vendor_gstin",
+    "received_by", "receipt_location",
+    "line_items"
+  ],
+  "optional_fields": [
+    "total_quantity_ordered", "total_quantity_received",
+    "total_quantity_rejected", "total_quantity_accepted"
+  ],
+  "line_item_fields": [
+    "description", "hsn_code",
+    "quantity_ordered", "quantity_received",
+    "quantity_rejected", "quantity_accepted",
+    "unit", "remarks"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "document_type_label": "Material Return Note (MRN)",
+  "required_fields": [
+    "mrn_number", "mrn_date",
+    "grn_number", "po_number",
+    "vendor_name", "vendor_gstin",
+    "return_reason", "return_initiated_by",
+    "line_items"
+  ],
+  "optional_fields": [
+    "total_quantity_returned"
+  ],
+  "line_item_fields": [
+    "description", "hsn_code",
+    "quantity_returned", "unit",
+    "defect_description", "photos_attached"
+  ],
+  "valid_return_reasons": [
+    "Defective", "Wrong Item", "Excess Quantity",
+    "Damaged in Transit", "Quality Rejection"
+  ]
+}

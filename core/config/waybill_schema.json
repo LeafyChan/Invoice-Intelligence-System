@@ -1,0 +1,21 @@
+{
+  "document_type_label": "E-Waybill (GST EWB-01)",
+  "required_fields": [
+    "ewb_number", "ewb_date", "ewb_valid_until",
+    "document_type", "document_number", "document_date",
+    "supplier_gstin", "supplier_name",
+    "recipient_gstin", "recipient_name",
+    "place_of_dispatch", "place_of_delivery",
+    "consignment_value", "hsn_code", "goods_description",
+    "quantity", "unit",
+    "transport_mode", "transport_mode_label"
+  ],
+  "optional_fields": [
+    "supplier_address", "recipient_address",
+    "cgst_rate", "sgst_rate", "igst_rate",
+    "vehicle_number", "vehicle_type",
+    "transporter_id", "transporter_name",
+    "transport_document_number", "transport_document_date",
+    "distance_km"
+  ]
+}
