@@ -3,56 +3,79 @@ from __future__ import annotations
 import json, re, sys, os
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-import ocr_engine  # noqa: E402 — core/ocr_engine.py (exposes read_pdf)
-import extractor   # noqa: E402 — reuse existing Groq/Gemini wrapper
+try:
+    import json_repair as _json_repair
+    _HAS_JSON_REPAIR = True
+except ImportError:
+    _HAS_JSON_REPAIR = False
 
+sys.path.insert(0, str(Path(__file__).parent))
+import ocr_engine  # noqa: E402
+import extractor   # noqa: E402
 
 def _run_ocr(file_path: str) -> str:
-    """Collapse all pages from read_pdf into a single text string."""
     pages = ocr_engine.read_pdf(file_path)
     return "\n\n".join(p.raw_text for p in pages if p.raw_text)
 
 SCHEMA_PATH = Path(__file__).parent / "config" / "waybill_schema.json"
 SCHEMA = json.loads(SCHEMA_PATH.read_text())
 
+_REQUIRED = SCHEMA.get("required_fields", [])
+_OPTIONAL = SCHEMA.get("optional_fields", [])
+_ALL_FIELDS = ", ".join(f'"{f}"' for f in _REQUIRED + _OPTIONAL)
+
 TRANSPORT_MODE_MAP = {"1": "Road", "2": "Rail", "3": "Air", "4": "Ship",
                       "road": "Road", "rail": "Rail", "air": "Air", "ship": "Ship"}
 
-SYSTEM_PROMPT = """You are an expert at extracting structured data from Indian E-Way Bills (Form GST EWB-01).
-Extract ALL fields exactly as they appear. For transport_mode, return the numeric code (1/2/3/4).
-For dates, return YYYY-MM-DD. For GST rates, return as numeric percentage (e.g. 18, not 0.18).
-Return ONLY valid JSON matching the schema — no markdown, no explanation."""
+SYSTEM_PROMPT = (
+    "You are an expert at extracting structured data from Indian E-Way Bills (Form GST EWB-01).\n\n"
+    "Return ONLY a single flat JSON object with these keys (omit keys not present in the document):\n"
+    + _ALL_FIELDS + "\n\n"
+    "Rules:\n"
+    "- transport_mode: numeric code only (1=Road, 2=Rail, 3=Air, 4=Ship)\n"
+    "- All dates: YYYY-MM-DD\n"
+    "- GST rates: numeric percentage (18, not 0.18)\n"
+    "- consignment_value, quantity, distance_km: numbers, not strings\n"
+    "- No markdown fences, no explanation, no extra keys\n"
+    "- Output must be valid JSON — every string value properly quoted and escaped"
+)
+
+
+def _build_user_message(raw_text: str) -> str:
+    return (
+        "Extract all E-Waybill fields from the document below.\n"
+        "Return a single flat JSON object. Keys from both Part A and Part B at the top level.\n\n"
+        "--- DOCUMENT ---\n"
+        + raw_text +
+        "\n--- END ---"
+    )
+
 
 def extract_waybill(file_path: str, org_id: str) -> dict:
-    """Full pipeline: OCR → LLM → validate → return structured dict."""
     raw_text = _run_ocr(file_path)
-    schema_str = json.dumps(SCHEMA, indent=2)
-
-    prompt = f"""Extract all E-Waybill fields from this document text.
-Schema to follow:
-{schema_str}
-
-Document text:
-{raw_text}
-
-Return JSON with keys from both part_a and part_b flattened at top level."""
 
     if extractor.DEMO_MODE:
         return extractor._demo_stub("set INVOICE_OCR_DEMO_MODE=0 and configure API keys to run live", SCHEMA)
 
+    user_msg = _build_user_message(raw_text)
+
     groq_key_present = bool(os.environ.get("GROQ_API_KEY"))
     if groq_key_present:
         try:
+            # Pass user_msg as raw_text — field list already in SYSTEM_PROMPT so SCHEMA=None
             raw_json = extractor._call_with_retry(
-                "groq", extractor._call_groq_text, SYSTEM_PROMPT, raw_text, SCHEMA)
+                "groq", extractor._call_groq_text, SYSTEM_PROMPT, user_msg, None)
             if isinstance(raw_json, dict):
                 raw_json["_raw_text"] = raw_text
                 return _parse_and_normalise_dict(raw_json)
+            data = _parse_and_normalise(raw_json if isinstance(raw_json, str) else json.dumps(raw_json))
+            data["_raw_text"] = raw_text
+            return data
         except Exception as e:
             print(f"   [Groq failed, falling back to Gemini for waybill] {e}", file=sys.stderr)
+
     try:
-        raw_json = extractor._call_with_retry("gemini", extractor._call_gemini_text, SYSTEM_PROMPT, raw_text)
+        raw_json = extractor._call_with_retry("gemini", extractor._call_gemini_text, SYSTEM_PROMPT, user_msg)
     except Exception as e:
         return extractor._demo_stub(f"live call failed ({e})", SCHEMA)
 
@@ -63,19 +86,30 @@ Return JSON with keys from both part_a and part_b flattened at top level."""
 
 
 def _parse_and_normalise_dict(data: dict) -> dict:
-    """Normalise an already-parsed dict (from Groq path)."""
     return _normalise(data)
 
 
 def _parse_and_normalise(raw: str) -> dict:
-    # Strip markdown fences if present
     clean = re.sub(r"```(?:json)?|```", "", raw).strip()
+
+    # Fast path
     try:
         data = json.loads(clean)
+        return _normalise(data)
     except json.JSONDecodeError:
-        return {"_parse_error": raw}
+        pass
 
-    return _normalise(data)
+    # Repair path
+    if _HAS_JSON_REPAIR:
+        try:
+            repaired = _json_repair.repair_json(clean, return_objects=True)
+            if isinstance(repaired, dict) and repaired:
+                print("   [waybill_extractor] JSON repaired successfully", file=sys.stderr)
+                return _normalise(repaired)
+        except Exception as repair_err:
+            print(f"   [waybill_extractor] json_repair failed: {repair_err}", file=sys.stderr)
+
+    return {"_parse_error": raw}
 
 
 def _normalise(data: dict) -> dict:
