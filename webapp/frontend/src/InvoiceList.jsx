@@ -257,7 +257,7 @@ export default function InvoiceList() {
   const fetchInvoices = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const tok = await getToken();
+      const tok = await getToken({ skipCache: true });
       const p = new URLSearchParams({ page, page_size:50, sort_by:sortBy, sort_dir:sortDir });
       if (search)       p.set("search", search);
       if (statusFilter) p.set("status", statusFilter);
@@ -273,7 +273,7 @@ export default function InvoiceList() {
   useEffect(() => {
     (async () => {
       try {
-        const tok = await getToken();
+        const tok = await getToken({ skipCache: true });
         const res = await fetch(`${API_BASE}/org/hsn-profile`, { headers:{ Authorization:`Bearer ${tok}` } });
         if (res.ok) setHsnProfile(await res.json());
       } catch {}
@@ -303,7 +303,7 @@ export default function InvoiceList() {
     if (rescanSet.size === 0) return;
     setRescanning(true); setRescanMsg(null);
     try {
-      const tok = await getToken();
+      const tok = await getToken({ skipCache: true });
       const res = await fetch(`${API_BASE}/invoices/rescan`, {
         method: "POST",
         headers: { Authorization:`Bearer ${tok}`, "Content-Type":"application/json" },
@@ -343,7 +343,7 @@ export default function InvoiceList() {
       let cancelled = false;
       (async () => {
         try {
-          const tok = await getToken();
+          const tok = await getToken({ skipCache: true });
           const res = await fetch(`${API_BASE}/invoices/${inv.invoice_id}`, { headers:{ Authorization:`Bearer ${tok}` } });
           if (res.ok && !cancelled) setDetail(await res.json());
         } catch {}

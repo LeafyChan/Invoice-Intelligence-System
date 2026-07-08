@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, UploadFile
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -76,9 +78,11 @@ _VALID_FOLDER_TYPES = frozenset({
 })
 
 app = FastAPI(title="Invoice Intelligence API")
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "https://country-starlit-improving.ngrok-free.dev"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
@@ -1497,3 +1501,19 @@ def debug_drive_files(
     files = drive_connector.list_folder_files(row[0])
     return {"folder_type": folder_type, "folder_id": row[0],
             "file_count": len(files), "files": files}
+# Add to main.py temporarily
+@app.get("/debug/token")
+def debug_token(authorization: str = Header(None)):
+    return {"raw_header": authorization}
+# Serve React frontend
+app.mount("/assets", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static/assets")), name="assets")
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_frontend(full_path: str):
+    if full_path.startswith(("invoices", "itc", "org", "drive", "purchase", "gstr", "waybills", "grn", "material", "vendors", "supply", "activity", "exceptions", "debug")):
+        raise HTTPException(status_code=404, detail="Not Found")
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    file_path = os.path.join(static_dir, full_path)
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+    return FileResponse(os.path.join(static_dir, "index.html"))

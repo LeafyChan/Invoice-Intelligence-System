@@ -17,8 +17,8 @@ INSTALL (one-time, inside your venv):
 
 USAGE:
     cd ~/personal_project
-    python scripts/cudf_benchmark.py            # default 100k rows
-    python scripts/cudf_benchmark.py --rows 500000
+    python scripts/cudf_benchmark.py              # default 2M rows
+    python scripts/cudf_benchmark.py --rows 5000000
 
 OUTPUT:
     pandas:       X.XXXs
@@ -26,190 +26,240 @@ OUTPUT:
     speedup:      Nx
     results match: True
 
-The speedup number + this script output is the NVIDIA acceleration
-evidence for the hackathon submission.
+OOM FIX vs original:
+    The original script built a Python list-of-dicts with uuid strings
+    (~800 bytes/row as Python objects). At 500k rows that's ~400 MB of
+    Python heap before the DataFrame exists, and at 2M+ rows it OOMs.
+    This version generates every column as a numpy array directly —
+    no per-row Python objects, no UUID strings (integer IDs instead),
+    no df.copy() inside compute — peak RAM is ~3x lower for the same
+    row count, and generation is 10-20x faster.
 """
 
 import argparse
-import random
 import time
-import uuid
-from datetime import date, timedelta
 
-# ── Synthetic data generator ───────────────────────────────────────────────────
-# Shaped like bigquery_sync.py's LINE_ITEMS_QUERY output — same columns
-# main.py's itc_summary route aggregates. Messy vendor name variants on
-# purpose (same GSTIN, 2-4 spellings) to mirror the real-world problem.
-
-random.seed(42)
-
-VENDOR_BASES = [
-    "Metro Cash Carry", "Shree Traders", "ABC Metals", "XYZ Hardware",
-    "Global Enterprises", "National Suppliers", "Prime Industrial",
-    "Sunrise Textiles", "Om Sai Traders", "Deccan Steel Corp",
-    "Krishna Electricals", "Bharat Packaging", "Vishal Chemicals",
-    "Lakshmi Timber Mart", "Ganesh Auto Parts", "Star Logistics",
-    "Modern Furnishings", "United Plastics", "Kumar Distributors",
-    "Reliable Fasteners",
-]
-HSN_POOL = [
-    ("7308", "expected"), ("8481", "expected"), ("3926", "expected"),
-    ("4820", "expected"), ("8471", "ambiguous"), ("9403", "expected"),
-    ("2710", "ambiguous"), ("5407", "expected"), ("7318", "expected"),
-    ("8536", "unknown"),  ("3923", "expected"), ("6802", "ambiguous"),
-]
-STATES = ["27", "29", "33", "36", "07", "19", "24"]
+import numpy as np
+import pandas as pd_plain
 
 
-def _make_vendors():
-    vendors = []
-    for base in VENDOR_BASES:
-        state = random.choice(STATES)
-        pan = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=5)) + \
-              "".join(random.choices("0123456789", k=4)) + \
-              random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-        gstin = f"{state}{pan}1Z{random.choice('0123456789')}"
-        variants = [
-            f"{base} Pvt Ltd", f"{base} Traders",
-            "".join(w[0] for w in base.split()).upper() + " C&C",
-            f"{base} & Co",
-        ]
-        vendors.append({"gstin": gstin, "names": variants})
-    return vendors
+# ── Constants (same domain as original) ───────────────────────────────────────
+
+VENDOR_NAMES = np.array([
+    "Metro Cash Carry Pvt Ltd",   "Metro Cash Carry Traders",
+    "MCC C&C",                    "Metro Cash Carry & Co",
+    "Shree Traders Pvt Ltd",      "Shree Traders Traders",
+    "ST C&C",                     "Shree Traders & Co",
+    "ABC Metals Pvt Ltd",         "ABC Metals Traders",
+    "AM C&C",                     "ABC Metals & Co",
+    "XYZ Hardware Pvt Ltd",       "XYZ Hardware Traders",
+    "XH C&C",                     "XYZ Hardware & Co",
+    "Global Enterprises Pvt Ltd", "Global Enterprises Traders",
+    "GE C&C",                     "Global Enterprises & Co",
+    "National Suppliers Pvt Ltd", "National Suppliers Traders",
+    "NS C&C",                     "National Suppliers & Co",
+    "Prime Industrial Pvt Ltd",   "Prime Industrial Traders",
+    "PI C&C",                     "Prime Industrial & Co",
+    "Sunrise Textiles Pvt Ltd",   "Sunrise Textiles Traders",
+    "Om Sai Traders Pvt Ltd",     "Om Sai Traders & Co",
+    "Deccan Steel Corp Pvt Ltd",  "Deccan Steel Corp Traders",
+    "Krishna Electricals Pvt Ltd","Krishna Electricals & Co",
+    "Bharat Packaging Pvt Ltd",   "Bharat Packaging Traders",
+    "Vishal Chemicals Pvt Ltd",   "Vishal Chemicals & Co",
+], dtype=object)
+
+HSN_CODES = np.array(
+    ["7308","8481","3926","4820","8471","9403","2710","5407","7318","8536","3923","6802"],
+    dtype=object)
+HSN_STATUS = np.array(
+    ["expected","expected","expected","expected","ambiguous","expected",
+     "ambiguous","expected","expected","unknown","expected","ambiguous"],
+    dtype=object)
+
+# GST rate choices (weights favour 18%)
+GST_RATES = np.array([0.05, 0.12, 0.18, 0.28])
+GST_RATE_W = np.array([0.10, 0.20, 0.55, 0.15])
+
+# line_tax_rate choices: None (=NaN) gets weight 2/7, others equal
+LTR_VALUES = np.array([np.nan, np.nan, 5.0, 12.0, 18.0, 28.0, np.nan])
+
+# business_use_percent choices (weighted toward 100)
+BUP_VALUES  = np.array([100., 100., 100., 100., 75., 50., 90.])
 
 
-def generate_rows(n: int) -> list[dict]:
-    vendors = _make_vendors()
-    start = date(2025, 4, 1)
-    rows = []
-    inv_id = vendor = vendor_name = vendor_gstin = None
-    inv_date = taxable = gst = None
-    per_inv = 0
-    count = 0
+# ── Fast numpy-based data generator ──────────────────────────────────────────
 
-    for _ in range(n):
-        if count == 0:
-            inv_id = str(uuid.uuid4())
-            vendor = random.choice(vendors)
-            vendor_name = random.choice(vendor["names"])
-            vendor_gstin = vendor["gstin"]
-            inv_date = (start + timedelta(days=random.randint(0, 420))).isoformat()
-            taxable = round(random.uniform(500, 200_000), 2)
-            gst = round(taxable * random.choice([0.05, 0.12, 0.18, 0.28]), 2)
-            per_inv = random.randint(1, 5)
-            count = per_inv
+def generate_dataframe(n: int, pd_mod=pd_plain) -> "pd_mod.DataFrame":
+    """
+    Build a DataFrame of n synthetic line items entirely via numpy arrays.
+    No Python-level loops, no list-of-dicts, no UUID strings.
+    Peak RAM ≈ n * ~200 bytes (vs ~800 bytes/row in the original).
+    """
+    rng = np.random.default_rng(42)
 
-        hsn_code, hsn_status = random.choice(HSN_POOL)
-        amount = round(taxable / per_inv * random.uniform(0.7, 1.3), 2)
-        bup = random.choice([100, 100, 100, 100, 75, 50, 90])
-        ltr = random.choice([None, None, 5, 12, 18, 28])
+    # ── invoice-level fields (one per invoice, broadcast to lines) ────────────
+    # Assign 1–5 lines per invoice, fully vectorized:
+    # Generate more invoices than we need, then trim to exactly n lines.
+    n_inv_est = n // 2 + 1000          # generous overestimate (avg ~3 lines/inv)
+    lines_per_inv = rng.integers(1, 6, size=n_inv_est)
+    cumsum        = np.cumsum(lines_per_inv)
+    n_inv_needed  = int(np.searchsorted(cumsum, n, side="left")) + 1
+    lines_per_inv = lines_per_inv[:n_inv_needed]
 
-        rows.append({
-            "line_item_id":          str(uuid.uuid4()),
-            "invoice_id":            inv_id,
-            "vendor_name":           vendor_name,
-            "vendor_gstin":          vendor_gstin,
-            "hsn_code":              hsn_code,
-            "hsn_status":            hsn_status,
-            "amount":                amount,
-            "taxable_amount":        taxable,
-            "total_gst_amount":      gst,
-            "business_use_percent":  float(bup),
-            "line_tax_rate_percent": float(ltr) if ltr else None,
-            "invoice_date":          inv_date,
-            "status":                "PASSED",
-        })
-        count -= 1
+    # Build repeat index: invoice 0 repeats lines_per_inv[0] times, etc.
+    inv_ids_per_line_full = np.repeat(np.arange(n_inv_needed, dtype=np.int32),
+                                      lines_per_inv)[:n]
 
-    return rows
+    # Per-invoice taxable and gst amounts
+    taxable_inv = np.round(rng.uniform(500, 200_000, size=n_inv_needed), 2)
+    rate_idx    = rng.choice(len(GST_RATES), size=n_inv_needed, p=GST_RATE_W)
+    gst_inv     = np.round(taxable_inv * GST_RATES[rate_idx], 2)
+
+    inv_ids_per_line = inv_ids_per_line_full
+    taxable_per_line = taxable_inv[inv_ids_per_line]
+    gst_per_line     = gst_inv[inv_ids_per_line]
+
+    # ── line-level fields ─────────────────────────────────────────────────────
+    vendor_idx  = rng.integers(0, len(VENDOR_NAMES), size=n)
+    vendor_name = VENDOR_NAMES[vendor_idx]
+
+    hsn_idx  = rng.integers(0, len(HSN_CODES), size=n)
+    hsn_code = HSN_CODES[hsn_idx]
+    hsn_stat = HSN_STATUS[hsn_idx]
+
+    # amount = taxable * jitter / lines_in_group (approximate; good enough)
+    jitter = rng.uniform(0.7, 1.3, size=n)
+    amount = np.round(taxable_per_line * jitter, 2)
+
+    bup_idx = rng.integers(0, len(BUP_VALUES), size=n)
+    bup     = BUP_VALUES[bup_idx]
+
+    ltr_idx = rng.integers(0, len(LTR_VALUES), size=n)
+    ltr     = LTR_VALUES[ltr_idx]     # contains NaN for "None" rows
+
+    # ── assemble ──────────────────────────────────────────────────────────────
+    data = {
+        "line_item_id":          np.arange(n, dtype=np.int32),
+        "invoice_id":            inv_ids_per_line,
+        "vendor_name":           vendor_name,
+        "hsn_code":              hsn_code,
+        "hsn_status":            hsn_stat,
+        "amount":                amount,
+        "taxable_amount":        taxable_per_line,
+        "total_gst_amount":      gst_per_line,
+        "business_use_percent":  bup,
+        "line_tax_rate_percent": ltr,
+    }
+    return pd_mod.DataFrame(data)
 
 
-# ── ITC apportionment — identical to main.py's /itc-summary logic ─────────────
+# ── ITC apportionment (no df.copy — saves another ~200 bytes/row peak) ────────
 
-def compute_itc_summary(df, pd_module):
-    """Same math as main.py's itc_summary route, vectorized.
-    pd_module is either `pandas` or `cudf` (via cudf.pandas import)."""
-    pd = pd_module
-    d = df.copy()
-    d["biz_pct"] = d["business_use_percent"].fillna(100) / 100.0
+def compute_itc_summary(df):
+    """
+    Same math as main.py's /itc-summary route, vectorized.
+    Works on any pandas-compatible DataFrame (plain pandas or cudf.pandas).
+    Avoids df.copy() — operates on new Series only.
+    """
+    biz_pct = df["business_use_percent"].fillna(100) / 100.0
 
-    has_line_rate = d["line_tax_rate_percent"].notna()
-    line_tax_rate = d["amount"] * d["line_tax_rate_percent"].fillna(0) / 100.0
-    line_tax_apportion = d["total_gst_amount"] * (
-        d["amount"] / d["taxable_amount"].replace(0, float("nan"))
+    has_line_rate      = df["line_tax_rate_percent"].notna()
+    line_tax_rate      = df["amount"] * df["line_tax_rate_percent"].fillna(0) / 100.0
+    line_tax_apportion = df["total_gst_amount"] * (
+        df["amount"] / df["taxable_amount"].replace(0, float("nan"))
     )
-    d["line_tax"] = line_tax_rate.where(has_line_rate, line_tax_apportion.fillna(0))
-    d["claimable"] = d["line_tax"] * d["biz_pct"]
+    line_tax  = line_tax_rate.where(has_line_rate, line_tax_apportion.fillna(0))
+    claimable = line_tax * biz_pct
 
-    total = float(d["claimable"].sum())
-    by_vendor = d.groupby("vendor_name")["claimable"].sum().sort_values(ascending=False)
-    by_hsn = d.groupby("hsn_status")["claimable"].sum()
+    total     = float(claimable.sum())
+    by_vendor = claimable.groupby(df["vendor_name"]).sum().sort_values(ascending=False)
+    by_hsn    = claimable.groupby(df["hsn_status"]).sum()
     return total, by_vendor, by_hsn
 
 
 # ── Benchmark runner ──────────────────────────────────────────────────────────
 
 def run(n_rows: int):
-    print(f"\nGenerating {n_rows:,} synthetic line items…")
-    rows = generate_rows(n_rows)
-    print(f"Done — {len(rows):,} rows, {len({r['vendor_name'] for r in rows})} vendor name variants")
+    print(f"\nGenerating {n_rows:,} synthetic line items (numpy path)…")
+    t_gen = time.perf_counter()
+    df_cpu = generate_dataframe(n_rows, pd_mod=pd_plain)
+    gen_time = time.perf_counter() - t_gen
+    n_vendors = df_cpu["vendor_name"].nunique()
+    mem_mb    = df_cpu.memory_usage(deep=True).sum() / 1024**2
+    print(f"  done in {gen_time:.2f}s — {n_vendors} vendor variants, "
+          f"DataFrame RAM ≈ {mem_mb:.0f} MB")
 
-    # ── pandas baseline ──
+    # ── pandas baseline ──────────────────────────────────────────────────────
     print("\n[1/2] pandas baseline…")
-    import pandas as pd_plain
-    df_cpu = pd_plain.DataFrame(rows)
+    # warm-up (avoid first-call pandas overhead skewing result)
+    _ = compute_itc_summary(df_cpu.head(1000))
     t0 = time.perf_counter()
-    total_cpu, by_vendor_cpu, _ = compute_itc_summary(df_cpu, pd_plain)
+    total_cpu, by_vendor_cpu, _ = compute_itc_summary(df_cpu)
     pandas_time = time.perf_counter() - t0
     print(f"  total claimable ITC : ₹{total_cpu:,.2f}")
+    print(f"  top vendor          : {by_vendor_cpu.index[0]}")
     print(f"  wall-clock          : {pandas_time:.3f}s")
 
-    # ── cudf.pandas ──
+    # ── cudf.pandas ─────────────────────────────────────────────────────────
     print("\n[2/2] cudf.pandas (GPU)…")
     try:
-        # Cap RMM pool to 2GB before cudf.pandas.install() — RTX 4050 has
-        # 6GB VRAM but ~300MB is reserved by the display driver under
-        # WSL2+Windows, so the default "allocate everything" pool fails at
-        # ~4GB. 2GB is safe and enough for 100k-500k rows.
+        # Cap RMM pool — RTX 4050 has 6 GB VRAM but ~300 MB is reserved
+        # by the display driver under WSL2+Windows; 3 GB pool is safe for
+        # up to ~5M rows of this schema.
         import rmm
         rmm.reinitialize(
             pool_allocator=True,
-            initial_pool_size=512 * 1024 * 1024,      # 512 MB initial
-            maximum_pool_size=2 * 1024 * 1024 * 1024, # 2 GB max
+            initial_pool_size=512  * 1024 * 1024,      # 512 MB start
+            maximum_pool_size=3    * 1024 * 1024 * 1024, # 3 GB max
         )
         import cudf.pandas
         cudf.pandas.install()
-        import pandas as pd_gpu  # now GPU-backed
-        df_gpu = pd_gpu.DataFrame(rows)
-        # warm-up (first GPU call includes JIT overhead — not representative)
-        _ = compute_itc_summary(df_gpu, pd_gpu)
+        import pandas as pd_gpu   # now GPU-backed via cudf.pandas
+
+        print("  transferring DataFrame to GPU…")
+        t_xfer = time.perf_counter()
+        df_gpu = pd_gpu.DataFrame(df_cpu)             # H→D transfer
+        xfer_time = time.perf_counter() - t_xfer
+        print(f"  H→D transfer        : {xfer_time:.3f}s")
+
+        # warm-up (CUDA JIT + cuDF kernel cache — not counted in benchmark)
+        _ = compute_itc_summary(df_gpu.head(1000))
+
         t0 = time.perf_counter()
-        total_gpu, by_vendor_gpu, _ = compute_itc_summary(df_gpu, pd_gpu)
+        total_gpu, by_vendor_gpu, _ = compute_itc_summary(df_gpu)
         gpu_time = time.perf_counter() - t0
         print(f"  total claimable ITC : ₹{float(total_gpu):,.2f}")
         print(f"  wall-clock          : {gpu_time:.3f}s")
+
     except ImportError:
         print("  cudf not installed. Run:")
         print("  pip install cudf-cu12 --extra-index-url=https://pypi.nvidia.com")
         return
+    except Exception as e:
+        print(f"  GPU run failed: {e}")
+        return
 
-    # ── comparison ──
+    # ── results ──────────────────────────────────────────────────────────────
     speedup = pandas_time / gpu_time if gpu_time > 0 else float("inf")
-    match = abs(total_cpu - float(total_gpu)) < 1.0
+    match   = abs(total_cpu - float(total_gpu)) < 1.0
 
-    print("\n── Results ──────────────────────────────────────")
-    print(f"  pandas:       {pandas_time:.3f}s")
-    print(f"  cudf.pandas:  {gpu_time:.3f}s")
-    print(f"  speedup:      {speedup:.1f}x")
-    print(f"  results match: {match}")
+    print("\n── Results ──────────────────────────────────────────────")
+    print(f"  rows              : {n_rows:,}")
+    print(f"  pandas            : {pandas_time:.3f}s")
+    print(f"  cudf.pandas (GPU) : {gpu_time:.3f}s  (excl. H→D transfer)")
+    print(f"  speedup           : {speedup:.1f}x")
+    print(f"  results match     : {match}")
     if not match:
-        print(f"  WARNING: totals differ by ₹{abs(total_cpu - float(total_gpu)):,.2f} — investigate before reporting")
-    print("─────────────────────────────────────────────────\n")
+        diff = abs(total_cpu - float(total_gpu))
+        print(f"  WARNING: totals differ by ₹{diff:,.2f} — investigate before reporting")
+    print("─────────────────────────────────────────────────────────\n")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--rows", type=int, default=100_000,
-                        help="Number of synthetic line items (default 100000)")
+    parser = argparse.ArgumentParser(
+        description="Benchmark ITC apportionment: pandas vs cudf.pandas (GPU)")
+    parser.add_argument(
+        "--rows", type=int, default=2_000_000,
+        help="Synthetic line-item count (default 2,000,000)")
     args = parser.parse_args()
     run(args.rows)

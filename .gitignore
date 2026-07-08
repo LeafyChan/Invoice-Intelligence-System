@@ -21,3 +21,6 @@ bq_service_account.json
 Log.md
 test_data/
 output/
+start_app.sh
+**/dist/
+.env.local
