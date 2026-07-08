@@ -89,6 +89,13 @@ function LoginPage() {
         <p style={ls.subheading}>
           GST-aware invoice extraction and compliance tracking for Indian SMEs.
         </p>
+        <div style={{ background: "#F0F4FF", border: "1px solid #C7D2FE", borderRadius: 8, padding: "14px 16px", marginBottom: 20, fontSize: 13 }}>
+          <div style={{ fontWeight: 700, color: "#312E81", marginBottom: 8 }}>🔑 Judge Access</div>
+          <div style={{ color: "#374151", lineHeight: 1.8 }}>
+            <span style={{ color: "#6B7280" }}>Username:</span> <strong>apac-submission-advik</strong><br />
+            <span style={{ color: "#6B7280" }}>Password:</span> <strong>APAC_Submission</strong>
+          </div>
+        </div>
         <SignInButton mode="modal">
           <button style={ls.signInBtn}>Sign in to your account →</button>
         </SignInButton>
