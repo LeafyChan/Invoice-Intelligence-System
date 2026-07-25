@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, UploadFile
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, UploadFile
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +27,8 @@ from app.invoice_store import save_invoice_row, save_placeholder_invoice
 from app import storage
 from app import bq_client
 from app.itc_engine import compute_itc_summary
+import re as _re
+from datetime import date as _date, timedelta as _td
 
 _core_parent = os.environ.get("CORE_PIPELINE_PATH")
 if not _core_parent:
@@ -40,7 +42,6 @@ from app.drive_sync import sync_org_drive_folder  # noqa: E402
 from app import po_store, exception_store  # noqa: E402
 from app.po_gstr2b_drive_sync import sync_org_po_folder  # noqa: E402
 import po_extractor as core_po_extractor   # noqa: E402
-# ── S17 supply chain ──────────────────────────────────────────────────────────
 from app import waybill_store, grn_store, material_return_store, vendor_score_store  # noqa: E402
 from app.supply_chain_drive_sync import (  # noqa: E402
     sync_org_waybill_folder, sync_org_grn_folder, sync_org_material_return_folder)
@@ -85,6 +86,80 @@ app.add_middleware(
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "https://country-starlit-improving.ngrok-free.dev"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
+
+# ── Overdue helpers (used in list_invoices) ───────────────────────────────────
+_NET_DAYS_RE = _re.compile(r"(\d+)\s*days?", _re.I)
+_ON_DELIVERY = _re.compile(r"cod|cash on delivery|on delivery|due on delivery|immediate", _re.I)
+_GRN_DAYS_RE = _re.compile(r"(\d+)\s*days?\s*(?:from|after)\s*(?:grn|receipt|delivery)", _re.I)
+
+
+def _effective_due(row: dict):
+    """Returns (date|None, source_str|None). Zero DB/LLM calls."""
+    if row.get("payment_due_date"):
+        d = row["payment_due_date"]
+        if not isinstance(d, _date):
+            try:
+                d = _date.fromisoformat(str(d))
+            except Exception:
+                return None, None
+        return d, "column"
+
+    terms = (row.get("payment_terms") or row.get("po_payment_terms") or "").strip()
+    if not terms:
+        return None, None
+    if _ON_DELIVERY.search(terms):
+        return None, "on_delivery"
+
+    inv_date = row.get("invoice_date")
+    grn_date = row.get("grn_date")
+    for attr in ("inv_date", "grn_date"):
+        val = locals()[attr]
+        if isinstance(val, str):
+            try:
+                locals()[attr] if False else None  # silence linter
+            except Exception:
+                pass
+    if isinstance(inv_date, str):
+        try: inv_date = _date.fromisoformat(inv_date)
+        except Exception: inv_date = None
+    if isinstance(grn_date, str):
+        try: grn_date = _date.fromisoformat(grn_date)
+        except Exception: grn_date = None
+
+    m = _GRN_DAYS_RE.search(terms)
+    if m:
+        base = grn_date or inv_date
+        if base:
+            return base + _td(days=int(m.group(1))), "from_grn"
+
+    m = _NET_DAYS_RE.search(terms)
+    if m and inv_date:
+        return inv_date + _td(days=int(m.group(1))), "net_days"
+
+    return None, None
+
+
+def _build_invoice_response(total, page, page_size, rows):
+    today = _date.today()
+    result = []
+    for r in rows:
+        d = dict(r)
+        eff, src = _effective_due(d)
+        d["effective_due_date"] = eff.isoformat() if eff else None
+        d["due_date_source"] = src
+        if d.get("is_paid"):
+            d["is_overdue"] = False
+        elif eff and src not in ("on_delivery", None):
+            d["is_overdue"] = eff < today
+        # else SQL CASE already set is_overdue=False, leave it
+        result.append(d)
+    return {
+        "total_count":  total,
+        "page":         page,
+        "page_size":    page_size,
+        "total_pages":  max(1, -(-total // page_size)),
+        "invoices":     result,
+    }
 
 
 def get_request_context(clerk_ctx: dict = Depends(get_current_org)) -> dict:
@@ -248,17 +323,14 @@ def get_file_url(invoice_id: str, db: Session = Depends(get_db_for_request)):
         return {"url": None, "storage_error": str(e), **drive_fallback}
 
 
-
 @app.get("/invoices/{invoice_id}/linked-docs")
 def get_linked_docs(invoice_id: str, db: Session = Depends(get_db_for_request)):
-    """Returns Drive file IDs for documents linked to this invoice (PO, waybill, GRN, MRN)."""
     inv = db.execute(
-        text("SELECT po_number, waybill_number, grn_number, mrn_number FROM invoices WHERE invoice_id = :iid"),
+        text("SELECT po_number, invoice_number FROM invoices WHERE invoice_id = :iid"),
         {"iid": invoice_id}).fetchone()
     if not inv:
         raise HTTPException(404, "Invoice not found")
-    po_number, waybill_number, grn_number, mrn_number = inv
-
+    po_number, invoice_number = inv[0], inv[1]
     result = {}
 
     if po_number:
@@ -268,24 +340,41 @@ def get_linked_docs(invoice_id: str, db: Session = Depends(get_db_for_request)):
         if row and row[0]:
             result["purchase_order"] = row[0]
 
-    if waybill_number:
+    ewb_number = None
+    if invoice_number:
         row = db.execute(
-            text("SELECT drive_file_id FROM waybills WHERE ewb_number = :n LIMIT 1"),
-            {"n": waybill_number}).fetchone()
-        if row and row[0]:
-            result["waybill"] = row[0]
+            text("SELECT ewb_number, drive_file_id FROM waybills "
+                 "WHERE document_number = :n LIMIT 1"),
+            {"n": invoice_number}).fetchone()
+        if row:
+            ewb_number = row[0]
+            if row[1]:
+                result["waybill"] = row[1]
 
-    if grn_number:
+    grn_number = None
+    if po_number or ewb_number:
+        filters, params = [], {}
+        if po_number:
+            filters.append("g.po_number = :po"); params["po"] = po_number
+        if ewb_number:
+            filters.append("g.waybill_number = :ewb"); params["ewb"] = ewb_number
         row = db.execute(
-            text("SELECT drive_file_id FROM grn WHERE grn_number = :n LIMIT 1"),
-            {"n": grn_number}).fetchone()
-        if row and row[0]:
-            result["grn"] = row[0]
+            text(f"SELECT grn_number, drive_file_id FROM grn g WHERE {' OR '.join(filters)} LIMIT 1"),
+            params).fetchone()
+        if row:
+            grn_number = row[0]
+            if row[1]:
+                result["grn"] = row[1]
 
-    if mrn_number:
+    if po_number or grn_number:
+        filters, params = [], {}
+        if po_number:
+            filters.append("mr.po_number = :po"); params["po"] = po_number
+        if grn_number:
+            filters.append("mr.grn_number = :grn"); params["grn"] = grn_number
         row = db.execute(
-            text("SELECT drive_file_id FROM material_returns WHERE mrn_number = :n LIMIT 1"),
-            {"n": mrn_number}).fetchone()
+            text(f"SELECT drive_file_id FROM material_returns mr WHERE {' OR '.join(filters)} LIMIT 1"),
+            params).fetchone()
         if row and row[0]:
             result["material_return"] = row[0]
 
@@ -415,11 +504,11 @@ def generate_hsn_profile_preview(
         text("SELECT code, confidence, source FROM hsn_profile_codes WHERE org_id = :oid"),
         {"oid": ctx["org_id"]}).mappings().all()
     existing_codes = {r["code"] for r in existing_rows}
-    manual_codes = {r["code"] for r in existing_rows if r["source"] == "manual"}
-    gen_expected = generated.get("expected_codes", [])
-    gen_ambiguous = generated.get("ambiguous_codes", [])
-    gen_codes = {c["code"] for c in gen_expected} | {c["code"] for c in gen_ambiguous}
-    new_codes = [c for c in (gen_expected + gen_ambiguous) if c["code"] not in existing_codes]
+    manual_codes   = {r["code"] for r in existing_rows if r["source"] == "manual"}
+    gen_expected   = generated.get("expected_codes", [])
+    gen_ambiguous  = generated.get("ambiguous_codes", [])
+    gen_codes      = {c["code"] for c in gen_expected} | {c["code"] for c in gen_ambiguous}
+    new_codes      = [c for c in (gen_expected + gen_ambiguous) if c["code"] not in existing_codes]
     return {
         "expected_codes": gen_expected,
         "ambiguous_codes": gen_ambiguous,
@@ -474,6 +563,7 @@ class _HsnManualCodeBody(BaseModel):
     code: str
     code_type: str = "HSN"
     description: Optional[str] = None
+    confidence: str = "expected"
 
 @app.post("/org/hsn-profile/codes")
 def add_manual_hsn_code(
@@ -486,20 +576,26 @@ def add_manual_hsn_code(
         raise HTTPException(400, "code cannot be empty")
     if body.code_type not in ("HSN", "SAC"):
         raise HTTPException(400, "code_type must be 'HSN' or 'SAC'")
+    if body.confidence not in ("expected", "excluded"):
+        raise HTTPException(400, "confidence must be 'expected' or 'excluded'")
     db.execute(
         text(
             "INSERT INTO hsn_profile_codes "
             "(org_id, code, code_type, description, confidence, source) "
-            "VALUES (:oid, :code, :ctype, :desc, 'expected', 'manual') "
+            "VALUES (:oid, :code, :ctype, :desc, :conf, 'manual') "
             "ON CONFLICT (org_id, code) DO UPDATE SET "
-            "  code_type = EXCLUDED.code_type, description = EXCLUDED.description"
+            "  code_type = EXCLUDED.code_type, description = EXCLUDED.description, "
+            "  confidence = EXCLUDED.confidence"
         ),
         {"oid": ctx["org_id"], "code": code,
-         "ctype": body.code_type, "desc": body.description})
+         "ctype": body.code_type, "desc": body.description,
+         "conf": body.confidence})
+    action = "hsn_code_blacklist" if body.confidence == "excluded" else "hsn_code_add"
     log_activity(
         db, ctx["org_id"], actor_type="user", actor_id=ctx["user_id"],
-        action="hsn_code_add", entity_type="hsn_profile_code", entity_id=code,
-        new_value=code, summary=f"Manually added HSN/SAC code {code}")
+        action=action, entity_type="hsn_profile_code", entity_id=code,
+        new_value=f"{code} ({body.confidence})",
+        summary=f"{'Blacklisted' if body.confidence == 'excluded' else 'Added'} HSN/SAC code {code}")
     return _load_hsn_profile(db, ctx["org_id"])
 
 @app.delete("/org/hsn-profile/codes/{code}")
@@ -543,7 +639,7 @@ def sync_drive(
     return {"folder_id": folder_id, "new_files_processed": len(results), "results": results}
 
 
-# ── S19: Force rescan selected invoices ───────────────────────────────────────
+# ── Rescan ────────────────────────────────────────────────────────────────────
 
 class _RescanBody(BaseModel):
     drive_file_ids: list[str]
@@ -554,13 +650,8 @@ def rescan_invoices(
     ctx: dict = Depends(get_request_context),
     db: Session = Depends(get_db_for_request),
 ):
-    """Force re-extract specific invoice files by drive_file_id.
-    Marks existing rows as FAILED + clears vendor_name so the ON CONFLICT
-    UPDATE in save_invoice_row will overwrite them on re-extraction."""
     if not body.drive_file_ids:
         raise HTTPException(400, "drive_file_ids cannot be empty")
-    # Mark rows as FAILED so they get retried (don't delete — preserves
-    # invoice_id references used by line_items, exceptions, etc.)
     for fid in body.drive_file_ids:
         db.execute(
             text(
@@ -569,7 +660,6 @@ def rescan_invoices(
             ),
             {"oid": ctx["org_id"], "fid": fid})
     db.commit()
-    # Get the invoices Drive folder
     folder_row = db.execute(
         text(
             "SELECT folder_id FROM org_drive_folders "
@@ -586,17 +676,12 @@ def rescan_invoices(
     for f in target_files:
         try:
             local_path = drive_connector.download_file(f["id"], f["name"], str(UPLOAD_DIR))
-            rows = core_pipeline.process_single_pdf(
-                local_path, schema, drive_file_id=f["id"])
+            rows = core_pipeline.process_single_pdf(local_path, schema, drive_file_id=f["id"])
             Path(local_path).unlink(missing_ok=True)
             for row in rows:
                 row["file_name"] = f["name"]
-                invoice_id = save_invoice_row(
-                    db, ctx["org_id"], row, source_type="drive")
-                results.append({
-                    "file_name": f["name"], "invoice_id": invoice_id,
-                    "status": row.get("status"),
-                })
+                invoice_id = save_invoice_row(db, ctx["org_id"], row, source_type="drive")
+                results.append({"file_name": f["name"], "invoice_id": invoice_id, "status": row.get("status")})
         except Exception as e:
             results.append({"file_name": f["name"], "status": "FAILED", "error": str(e)})
     return {"rescanned": len(target_files), "results": results}
@@ -691,9 +776,7 @@ def patch_invoice(
             prior = db.execute(
                 text("SELECT description FROM line_items WHERE line_item_id = :lid"),
                 {"lid": li.line_item_id}).mappings().fetchone()
-            db.execute(
-                text("DELETE FROM line_items WHERE line_item_id = :lid"),
-                {"lid": li.line_item_id})
+            db.execute(text("DELETE FROM line_items WHERE line_item_id = :lid"), {"lid": li.line_item_id})
             log_activity(
                 db, ctx["org_id"], actor_type="user", actor_id=ctx["user_id"],
                 action="line_item_delete", entity_type="line_item",
@@ -729,8 +812,7 @@ def patch_invoice(
                  "desc": li.description, "hsn": li.hsn_code,
                  "qty": li.quantity, "rate": li.rate, "amt": li.amount,
                  "ltrp": li.line_tax_rate_percent,
-                 "bup": li.business_use_percent
-                      if li.business_use_percent is not None else 100})
+                 "bup": li.business_use_percent if li.business_use_percent is not None else 100})
             log_activity(
                 db, ctx["org_id"], actor_type="user", actor_id=ctx["user_id"],
                 action="line_item_add", entity_type="line_item",
@@ -739,21 +821,40 @@ def patch_invoice(
     reconciliation_issues = _reconcile_invoice_amounts(db, invoice_id)
     if reconciliation_issues:
         db.execute(
-            text("UPDATE invoices SET status = 'WARNING', issues = :issues "
-                 "WHERE invoice_id = :iid"),
+            text("UPDATE invoices SET status = 'WARNING', issues = :issues WHERE invoice_id = :iid"),
             {"iid": invoice_id, "issues": "; ".join(reconciliation_issues)})
     elif current.get("status") == "WARNING" and current.get("issues") and (
-        "taxable_amount is" in current["issues"]
-        or "total_amount is" in current["issues"]
+        "taxable_amount is" in current["issues"] or "total_amount is" in current["issues"]
     ):
         db.execute(
-            text("UPDATE invoices SET status = 'PASSED', issues = NULL "
-                 "WHERE invoice_id = :iid"),
+            text("UPDATE invoices SET status = 'PASSED', issues = NULL WHERE invoice_id = :iid"),
             {"iid": invoice_id})
-    return {
-        "invoice_id": invoice_id, "updated": True,
-        "reconciliation_issues": reconciliation_issues,
-    }
+    return {"invoice_id": invoice_id, "updated": True, "reconciliation_issues": reconciliation_issues}
+
+
+@app.patch("/invoices/{invoice_id}/mark-paid", status_code=200)
+def mark_invoice_paid(
+    invoice_id: str,
+    ctx: dict = Depends(get_request_context),
+    db: Session = Depends(get_db_for_request),
+):
+    row = db.execute(
+        text("SELECT invoice_id, file_name, is_paid FROM invoices WHERE invoice_id = :iid"),
+        {"iid": invoice_id}).mappings().fetchone()
+    if not row:
+        raise HTTPException(404, "Invoice not found")
+    if row["is_paid"]:
+        return {"invoice_id": invoice_id, "is_paid": True, "already_paid": True}
+    db.execute(
+        text("UPDATE invoices SET is_paid = true, paid_at = now() WHERE invoice_id = :iid"),
+        {"iid": invoice_id})
+    log_activity(
+        db, ctx["org_id"], actor_type="user", actor_id=ctx["user_id"],
+        action="invoice_marked_paid", entity_type="invoice", entity_id=invoice_id,
+        new_value="paid",
+        summary=f"Invoice marked as paid: {row['file_name'] or invoice_id}")
+    db.commit()
+    return {"invoice_id": invoice_id, "is_paid": True, "already_paid": False}
 
 
 # ── Activity log ──────────────────────────────────────────────────────────────
@@ -777,8 +878,7 @@ def get_activity_log(
     params["limit"] = page_size
     params["offset"] = (page - 1) * page_size
     count_p = {k: v for k, v in params.items() if k not in ("limit", "offset")}
-    total = db.execute(
-        text(f"SELECT COUNT(*) FROM activity_log {where}"), count_p).scalar()
+    total = db.execute(text(f"SELECT COUNT(*) FROM activity_log {where}"), count_p).scalar()
     rows = db.execute(
         text(f"SELECT log_id, actor_type, actor_id, action, entity_type, entity_id, "
              f"field_name, old_value, new_value, summary, created_at "
@@ -806,35 +906,34 @@ def list_invoices(
     sort_dir: str = Query(default="desc"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    overdue_only: bool = Query(default=False),
 ):
     col = sort_by if sort_by in _SORTABLE_COLUMNS else "processed_at"
     direction = "DESC" if sort_dir.strip().upper() == "DESC" else "ASC"
     filters, params = ["1=1"], {}
     if status:
-        if status not in {
-            "PASSED", "WARNING", "FAILED", "NEEDS_MANUAL_REVIEW", "PLACEHOLDER"
-        }:
+        if status not in {"PASSED", "WARNING", "FAILED", "NEEDS_MANUAL_REVIEW", "PLACEHOLDER"}:
             raise HTTPException(400, f"Invalid status '{status}'")
         filters.append("i.status = :status"); params["status"] = status
     if search:
         filters.append(
-            "(i.vendor_name ILIKE :search OR i.invoice_number ILIKE :search "
-            " OR i.po_number ILIKE :search)")
+            "(i.vendor_name ILIKE :search OR i.invoice_number ILIKE :search OR i.po_number ILIKE :search)")
         params["search"] = f"%{search}%"
     if po_number:
-        filters.append("i.po_number ILIKE :po_number")
-        params["po_number"] = f"%{po_number}%"
+        filters.append("i.po_number ILIKE :po_number"); params["po_number"] = f"%{po_number}%"
     if vendor_gstin:
-        filters.append("i.vendor_gstin ILIKE :vgstin")
-        params["vgstin"] = f"%{vendor_gstin}%"
+        filters.append("i.vendor_gstin ILIKE :vgstin"); params["vgstin"] = f"%{vendor_gstin}%"
     if paid is not None:
         filters.append("i.is_paid = :paid"); params["paid"] = paid
+    if overdue_only:
+        # SQL catches explicit payment_due_date; Python post-processing catches payment_terms cases
+        filters.append(
+            "(i.is_paid = false AND i.payment_due_date IS NOT NULL AND i.payment_due_date < CURRENT_DATE)")
     where = "WHERE " + " AND ".join(filters)
     params["limit"] = page_size
     params["offset"] = (page - 1) * page_size
     count_p = {k: v for k, v in params.items() if k not in ("limit", "offset")}
-    total = db.execute(
-        text(f"SELECT COUNT(*) FROM invoices i {where}"), count_p).scalar()
+    total = db.execute(text(f"SELECT COUNT(*) FROM invoices i {where}"), count_p).scalar()
     rows = db.execute(
         text(f"""
             SELECT
@@ -845,83 +944,70 @@ def list_invoices(
                 i.status, i.confidence, i.extraction_method,
                 i.issues, i.is_user_verified, i.processed_at,
                 i.is_paid, i.paid_at, i.drive_file_id,
+                i.payment_due_date,
+                CASE
+                    WHEN i.is_paid = true THEN false
+                    WHEN i.payment_due_date IS NOT NULL AND i.payment_due_date < CURRENT_DATE THEN true
+                    ELSE false
+                END AS is_overdue,
+                i.payment_due_date AS effective_due_date,
                 CASE WHEN i.taxable_amount > 0
                      THEN ROUND(i.total_gst_amount / i.taxable_amount * 100, 2)
                      ELSE NULL END AS tax_rate_pct,
-                -- PO fields
                 po.po_date,
                 po.delivery_date_requested,
                 po.payment_terms AS po_payment_terms,
                 po.incoterm AS po_incoterm,
                 po.incoterm_raw AS po_incoterm_raw,
                 po.incoterm_named_place AS po_incoterm_named_place,
-                -- Waybill (first linked via invoice_number → document_number)
                 (SELECT w.ewb_number FROM waybills w
-                 WHERE w.document_number = i.invoice_number
-                   AND w.org_id = i.org_id LIMIT 1) AS waybill_number,
-                -- GRN (first linked via waybill or PO)
+                 WHERE w.document_number = i.invoice_number AND w.org_id = i.org_id LIMIT 1) AS waybill_number,
                 (SELECT g.grn_number FROM grn g
-                 WHERE (g.po_number = i.po_number
-                    OR g.waybill_number = (
-                        SELECT w2.ewb_number FROM waybills w2
-                        WHERE w2.document_number = i.invoice_number
-                          AND w2.org_id = i.org_id LIMIT 1))
+                 WHERE (g.po_number = i.po_number OR g.waybill_number = (
+                     SELECT w2.ewb_number FROM waybills w2
+                     WHERE w2.document_number = i.invoice_number AND w2.org_id = i.org_id LIMIT 1))
                    AND g.org_id = i.org_id LIMIT 1) AS grn_number,
                 (SELECT g.grn_date FROM grn g
-                 WHERE (g.po_number = i.po_number
-                    OR g.waybill_number = (
-                        SELECT w2.ewb_number FROM waybills w2
-                        WHERE w2.document_number = i.invoice_number
-                          AND w2.org_id = i.org_id LIMIT 1))
+                 WHERE (g.po_number = i.po_number OR g.waybill_number = (
+                     SELECT w2.ewb_number FROM waybills w2
+                     WHERE w2.document_number = i.invoice_number AND w2.org_id = i.org_id LIMIT 1))
                    AND g.org_id = i.org_id LIMIT 1) AS grn_date,
-                -- MRN
                 (SELECT mr.mrn_number FROM material_returns mr
                  WHERE (mr.grn_number = (
                      SELECT g3.grn_number FROM grn g3
-                     WHERE (g3.po_number = i.po_number
-                        OR g3.waybill_number = (
-                            SELECT w3.ewb_number FROM waybills w3
-                            WHERE w3.document_number = i.invoice_number
-                              AND w3.org_id = i.org_id LIMIT 1))
+                     WHERE (g3.po_number = i.po_number OR g3.waybill_number = (
+                         SELECT w3.ewb_number FROM waybills w3
+                         WHERE w3.document_number = i.invoice_number AND w3.org_id = i.org_id LIMIT 1))
                        AND g3.org_id = i.org_id LIMIT 1)
-                  OR mr.po_number = i.po_number)
-                   AND mr.org_id = i.org_id LIMIT 1) AS mrn_number,
-                -- Drive file IDs for PWGM doc-chain indicators
+                  OR mr.po_number = i.po_number) AND mr.org_id = i.org_id LIMIT 1) AS mrn_number,
                 po.drive_file_id AS po_drive_file_id,
                 (SELECT w.drive_file_id FROM waybills w
-                 WHERE w.document_number = i.invoice_number
-                   AND w.org_id = i.org_id LIMIT 1) AS waybill_drive_file_id,
+                 WHERE w.document_number = i.invoice_number AND w.org_id = i.org_id LIMIT 1) AS waybill_drive_file_id,
                 (SELECT g.drive_file_id FROM grn g
-                 WHERE (g.po_number = i.po_number
-                    OR g.waybill_number = (
-                        SELECT w2.ewb_number FROM waybills w2
-                        WHERE w2.document_number = i.invoice_number
-                          AND w2.org_id = i.org_id LIMIT 1))
+                 WHERE (g.po_number = i.po_number OR g.waybill_number = (
+                     SELECT w2.ewb_number FROM waybills w2
+                     WHERE w2.document_number = i.invoice_number AND w2.org_id = i.org_id LIMIT 1))
                    AND g.org_id = i.org_id LIMIT 1) AS grn_drive_file_id,
                 (SELECT mr.drive_file_id FROM material_returns mr
                  WHERE (mr.grn_number = (
                      SELECT g3.grn_number FROM grn g3
-                     WHERE (g3.po_number = i.po_number
-                        OR g3.waybill_number = (
-                            SELECT w3.ewb_number FROM waybills w3
-                            WHERE w3.document_number = i.invoice_number
-                              AND w3.org_id = i.org_id LIMIT 1))
+                     WHERE (g3.po_number = i.po_number OR g3.waybill_number = (
+                         SELECT w3.ewb_number FROM waybills w3
+                         WHERE w3.document_number = i.invoice_number AND w3.org_id = i.org_id LIMIT 1))
                        AND g3.org_id = i.org_id LIMIT 1)
-                  OR mr.po_number = i.po_number)
-                   AND mr.org_id = i.org_id LIMIT 1) AS mrn_drive_file_id
+                  OR mr.po_number = i.po_number) AND mr.org_id = i.org_id LIMIT 1) AS mrn_drive_file_id
             FROM invoices i
-            LEFT JOIN purchase_orders po
-                ON po.po_number = i.po_number AND po.org_id = i.org_id
+            LEFT JOIN purchase_orders po ON po.po_number = i.po_number AND po.org_id = i.org_id
             {where}
             ORDER BY i.{col} {direction} NULLS LAST
             LIMIT :limit OFFSET :offset
         """),
         params).mappings().all()
-    return {
-        "total_count": total, "page": page, "page_size": page_size,
-        "total_pages": max(1, -(-total // page_size)),
-        "invoices": [dict(r) for r in rows],
-    }
+
+    # ── Post-process: compute effective_due_date from payment_terms text ──────
+    # SQL CASE only catches explicit payment_due_date column values.
+    # This covers "Net 30", "Net 45 from GRN" etc. — zero extra DB calls.
+    return _build_invoice_response(total, page, page_size, rows)
 
 
 # ── ITC summary ───────────────────────────────────────────────────────────────
@@ -946,8 +1032,7 @@ def itc_summary(
                    hp.confidence AS hsn_status
             FROM line_items li
             JOIN invoices i ON i.invoice_id = li.invoice_id
-            LEFT JOIN hsn_profile_codes hp
-                ON hp.org_id = li.org_id AND hp.code = li.hsn_code
+            LEFT JOIN hsn_profile_codes hp ON hp.org_id = li.org_id AND hp.code = li.hsn_code
             WHERE i.status NOT IN ('FAILED', 'PLACEHOLDER') {where}
         """),
         params).mappings().all()
@@ -958,15 +1043,13 @@ def itc_summary(
 def analytics_itc_trend(ctx: dict = Depends(get_request_context)):
     if not bq_client.is_configured():
         return {"bq_configured": False, "months": []}
-    return {"bq_configured": True,
-            "months": bq_client.query_itc_trend(str(ctx["org_id"]))}
+    return {"bq_configured": True, "months": bq_client.query_itc_trend(str(ctx["org_id"]))}
 
 @app.get("/analytics/vendor-reliability")
 def analytics_vendor_reliability(ctx: dict = Depends(get_request_context)):
     if not bq_client.is_configured():
         return {"bq_configured": False, "vendors": []}
-    return {"bq_configured": True,
-            "vendors": bq_client.query_vendor_reliability(str(ctx["org_id"]))}
+    return {"bq_configured": True, "vendors": bq_client.query_vendor_reliability(str(ctx["org_id"]))}
 
 
 # ── Training exports ──────────────────────────────────────────────────────────
@@ -997,14 +1080,12 @@ def create_training_export(
         text("""
             INSERT INTO training_exports (
               org_id, invoice_id, source_type, extraction_method, confidence,
-              extracted_fields, line_items, verification_checks,
-              any_check_failed, verification_note
+              extracted_fields, line_items, verification_checks, any_check_failed, verification_note
             ) VALUES (
               CAST(:org_id AS uuid), CAST(:invoice_id AS uuid),
               :source_type, :extraction_method, :confidence,
               CAST(:extracted_fields AS jsonb), CAST(:line_items AS jsonb),
-              CAST(:verification_checks AS jsonb),
-              :any_check_failed, :verification_note
+              CAST(:verification_checks AS jsonb), :any_check_failed, :verification_note
             ) RETURNING export_id
         """),
         {
@@ -1020,8 +1101,7 @@ def create_training_export(
     export_id = str(result.scalar())
     log_activity(
         db, ctx["org_id"], actor_type="user", actor_id=ctx["user_id"],
-        action="training_export_created", entity_type="invoice",
-        entity_id=body.invoice_id,
+        action="training_export_created", entity_type="invoice", entity_id=body.invoice_id,
         summary=f"Verified and exported (checks_failed={body.any_check_failed})")
     return {"export_id": export_id}
 
@@ -1036,8 +1116,7 @@ def list_training_exports(
     if failed_only:
         filters.append("any_check_failed = true")
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
-    total = db.execute(
-        text(f"SELECT COUNT(*) FROM training_exports {where}"), params).scalar()
+    total = db.execute(text(f"SELECT COUNT(*) FROM training_exports {where}"), params).scalar()
     rows = db.execute(
         text(f"SELECT export_id, invoice_id, source_type, extraction_method, confidence, "
              f"extracted_fields, line_items, verification_checks, any_check_failed, "
@@ -1108,8 +1187,7 @@ def set_drive_folder_multi(
         field_name=f"drive_folder_id[{body.folder_type}]",
         old_value=prior_folder_id, new_value=folder_id,
         summary=f"{body.folder_type} Drive folder set to {folder_id}")
-    return {"org_id": ctx["org_id"],
-            "folder_type": body.folder_type, "folder_id": folder_id}
+    return {"org_id": ctx["org_id"], "folder_type": body.folder_type, "folder_id": folder_id}
 
 @app.get("/org/drive-folders")
 def get_drive_folders_multi(
@@ -1120,13 +1198,7 @@ def get_drive_folders_multi(
         text("SELECT folder_type, folder_id, last_synced_at FROM org_drive_folders "
              "WHERE org_id = CAST(:oid AS uuid)"),
         {"oid": ctx["org_id"]}).mappings().all()
-    by_type = {
-        r["folder_type"]: {
-            "folder_id": r["folder_id"],
-            "last_synced_at": r["last_synced_at"],
-        }
-        for r in rows
-    }
+    by_type = {r["folder_type"]: {"folder_id": r["folder_id"], "last_synced_at": r["last_synced_at"]} for r in rows}
     return {
         "org_id": ctx["org_id"],
         "folders": {t: by_type.get(t) for t in sorted(_VALID_FOLDER_TYPES)},
@@ -1159,15 +1231,13 @@ def sync_purchase_orders(
         text("UPDATE org_drive_folders SET last_synced_at = now() "
              "WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'purchase_orders'"),
         {"oid": ctx["org_id"]})
-    # Create placeholder invoice rows for POs with no matching invoice yet
     pos_synced = db.execute(
         text("SELECT po_number FROM purchase_orders WHERE org_id = CAST(:oid AS uuid)"),
         {"oid": ctx["org_id"]}).fetchall()
     placeholders = 0
     for (po_num,) in pos_synced:
         if po_num:
-            pid = save_placeholder_invoice(
-                db, ctx["org_id"], po_number=po_num, source_label="PO sync")
+            pid = save_placeholder_invoice(db, ctx["org_id"], po_number=po_num, source_label="PO sync")
             if pid:
                 placeholders += 1
     return {"folder_id": folder_id, "new_files_processed": len(results),
@@ -1183,8 +1253,7 @@ def list_purchase_orders(
     rows = db.execute(
         text("SELECT po_id, file_name, po_number, po_date, vendor_name, vendor_gstin, "
              "total_amount, status, confidence, processed_at "
-             "FROM purchase_orders ORDER BY processed_at DESC "
-             "LIMIT :limit OFFSET :offset"),
+             "FROM purchase_orders ORDER BY processed_at DESC LIMIT :limit OFFSET :offset"),
         {"limit": page_size, "offset": (page - 1) * page_size}).mappings().all()
     return {"total_count": total, "page": page, "page_size": page_size,
             "total_pages": max(1, -(-total // page_size)),
@@ -1193,8 +1262,7 @@ def list_purchase_orders(
 @app.get("/purchase-orders/{po_id}")
 def get_purchase_order(po_id: str, db: Session = Depends(get_db_for_request)):
     row = db.execute(
-        text("SELECT * FROM purchase_orders WHERE po_id = :pid"),
-        {"pid": po_id}).mappings().fetchone()
+        text("SELECT * FROM purchase_orders WHERE po_id = :pid"), {"pid": po_id}).mappings().fetchone()
     if not row:
         raise HTTPException(404, "Purchase order not found")
     items = db.execute(
@@ -1203,6 +1271,150 @@ def get_purchase_order(po_id: str, db: Session = Depends(get_db_for_request)):
         {"pid": po_id}).mappings().all()
     return {**dict(row), "line_items": [dict(i) for i in items]}
 
+_EDITABLE_PO_FIELDS = frozenset({
+    "po_number", "po_date", "vendor_name", "vendor_gstin",
+    "total_amount", "incoterm", "incoterm_raw", "incoterm_named_place",
+    "requested_transport_mode", "delivery_date_requested", "delivery_address",
+    "payment_terms", "advance_payment_percent",
+})
+ 
+@app.patch("/purchase-orders/{po_id}")
+def patch_purchase_order(
+    po_id: str,
+    body: dict = Body(...),
+    ctx: dict = Depends(get_request_context),
+    db: Session = Depends(get_db_for_request),
+):
+    bad = set(body.keys()) - _EDITABLE_PO_FIELDS
+    if bad:
+        raise HTTPException(400, f"Non-editable fields: {', '.join(sorted(bad))}")
+    if not body:
+        raise HTTPException(400, "No fields to update")
+    exists = db.execute(
+        text("SELECT 1 FROM purchase_orders WHERE po_id = CAST(:pid AS uuid)"),
+        {"pid": po_id}).fetchone()
+    if not exists:
+        raise HTTPException(404, "Purchase order not found")
+    set_clause = ", ".join(f"{k} = :{k}" for k in body)
+    db.execute(
+        text(f"UPDATE purchase_orders SET {set_clause} WHERE po_id = CAST(:po_id AS uuid)"),
+        {**body, "po_id": po_id})
+    log_activity(
+        db, ctx["org_id"], actor_type="user", actor_id=ctx["user_id"],
+        action="po_field_edit", entity_type="purchase_order", entity_id=po_id,
+        summary=f"PO {po_id[:8]}… updated: {', '.join(body.keys())}")
+    return {"po_id": po_id, "updated": True}
+ 
+ 
+# ── Waybill PATCH ─────────────────────────────────────────────────────────────
+ 
+_EDITABLE_WAYBILL_FIELDS = frozenset({
+    "ewb_number", "ewb_date", "ewb_valid_until",
+    "document_number", "document_date", "document_type",
+    "supplier_name", "supplier_gstin", "supplier_address",
+    "recipient_name", "recipient_gstin", "recipient_address",
+    "transport_mode_label", "vehicle_number", "vehicle_type",
+    "transporter_name", "distance_km", "consignment_value",
+})
+ 
+@app.patch("/waybills/{waybill_id}")
+def patch_waybill(
+    waybill_id: str,
+    body: dict = Body(...),
+    ctx: dict = Depends(get_request_context),
+    db: Session = Depends(get_db_for_request),
+):
+    bad = set(body.keys()) - _EDITABLE_WAYBILL_FIELDS
+    if bad:
+        raise HTTPException(400, f"Non-editable fields: {', '.join(sorted(bad))}")
+    if not body:
+        raise HTTPException(400, "No fields to update")
+    exists = db.execute(
+        text("SELECT 1 FROM waybills WHERE waybill_id = CAST(:wid AS uuid)"),
+        {"wid": waybill_id}).fetchone()
+    if not exists:
+        raise HTTPException(404, "Waybill not found")
+    set_clause = ", ".join(f"{k} = :{k}" for k in body)
+    db.execute(
+        text(f"UPDATE waybills SET {set_clause} WHERE waybill_id = CAST(:waybill_id AS uuid)"),
+        {**body, "waybill_id": waybill_id})
+    log_activity(
+        db, ctx["org_id"], actor_type="user", actor_id=ctx["user_id"],
+        action="waybill_field_edit", entity_type="waybill", entity_id=waybill_id,
+        summary=f"Waybill {waybill_id[:8]}… updated: {', '.join(body.keys())}")
+    return {"waybill_id": waybill_id, "updated": True}
+ 
+ 
+# ── GRN PATCH ─────────────────────────────────────────────────────────────────
+ 
+_EDITABLE_GRN_FIELDS = frozenset({
+    "grn_number", "grn_date", "po_number", "waybill_number",
+    "vendor_name", "vendor_gstin",
+    "total_quantity_ordered", "total_quantity_received",
+})
+ 
+@app.patch("/grn/{grn_id}")
+def patch_grn(
+    grn_id: str,
+    body: dict = Body(...),
+    ctx: dict = Depends(get_request_context),
+    db: Session = Depends(get_db_for_request),
+):
+    bad = set(body.keys()) - _EDITABLE_GRN_FIELDS
+    if bad:
+        raise HTTPException(400, f"Non-editable fields: {', '.join(sorted(bad))}")
+    if not body:
+        raise HTTPException(400, "No fields to update")
+    exists = db.execute(
+        text("SELECT 1 FROM grn WHERE grn_id = CAST(:gid AS uuid)"),
+        {"gid": grn_id}).fetchone()
+    if not exists:
+        raise HTTPException(404, "GRN not found")
+    set_clause = ", ".join(f"{k} = :{k}" for k in body)
+    db.execute(
+        text(f"UPDATE grn SET {set_clause} WHERE grn_id = CAST(:grn_id AS uuid)"),
+        {**body, "grn_id": grn_id})
+    log_activity(
+        db, ctx["org_id"], actor_type="user", actor_id=ctx["user_id"],
+        action="grn_field_edit", entity_type="grn", entity_id=grn_id,
+        summary=f"GRN {grn_id[:8]}… updated: {', '.join(body.keys())}")
+    return {"grn_id": grn_id, "updated": True}
+ 
+ 
+# ── Material Return PATCH ─────────────────────────────────────────────────────
+ 
+_EDITABLE_MRN_FIELDS = frozenset({
+    "mrn_number", "mrn_date", "grn_number", "po_number",
+    "vendor_name", "vendor_gstin",
+    "return_reason", "return_initiated_by", "total_quantity_returned",
+})
+ 
+@app.patch("/material-returns/{mrn_id}")
+def patch_material_return(
+    mrn_id: str,
+    body: dict = Body(...),
+    ctx: dict = Depends(get_request_context),
+    db: Session = Depends(get_db_for_request),
+):
+    bad = set(body.keys()) - _EDITABLE_MRN_FIELDS
+    if bad:
+        raise HTTPException(400, f"Non-editable fields: {', '.join(sorted(bad))}")
+    if not body:
+        raise HTTPException(400, "No fields to update")
+    exists = db.execute(
+        text("SELECT 1 FROM material_returns WHERE mrn_id = CAST(:mid AS uuid)"),
+        {"mid": mrn_id}).fetchone()
+    if not exists:
+        raise HTTPException(404, "Material return not found")
+    set_clause = ", ".join(f"{k} = :{k}" for k in body)
+    db.execute(
+        text(f"UPDATE material_returns SET {set_clause} WHERE mrn_id = CAST(:mrn_id AS uuid)"),
+        {**body, "mrn_id": mrn_id})
+    log_activity(
+        db, ctx["org_id"], actor_type="user", actor_id=ctx["user_id"],
+        action="mrn_field_edit", entity_type="material_return", entity_id=mrn_id,
+        summary=f"MRN {mrn_id[:8]}… updated: {', '.join(body.keys())}")
+    return {"mrn_id": mrn_id, "updated": True}
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
 
@@ -1217,8 +1429,7 @@ def list_exceptions_route(
 ):
     if status and status not in {"open", "resolved", "ignored"}:
         raise HTTPException(400, f"Invalid status '{status}'")
-    return exception_store.list_exceptions(
-        db, ctx["org_id"], status, exception_type, page, page_size)
+    return exception_store.list_exceptions(db, ctx["org_id"], status, exception_type, page, page_size)
 
 class _ExceptionResolveBody(BaseModel):
     status: str
@@ -1233,8 +1444,7 @@ def resolve_exception_route(
     if body.status not in ("resolved", "ignored"):
         raise HTTPException(400, "status must be 'resolved' or 'ignored'")
     ok = exception_store.resolve_exception(
-        db, ctx["org_id"], exception_id, ctx["user_id"],
-        body.status, body.resolution_note)
+        db, ctx["org_id"], exception_id, ctx["user_id"], body.status, body.resolution_note)
     if not ok:
         raise HTTPException(404, "Exception not found")
     log_activity(
@@ -1243,25 +1453,95 @@ def resolve_exception_route(
         new_value=body.status, summary=f"Exception marked {body.status}")
     return {"exception_id": exception_id, "status": body.status}
 
+@app.delete("/exceptions/{exception_id}", status_code=204)
+def delete_exception_route(
+    exception_id: str,
+    ctx: dict = Depends(get_request_context),
+    db: Session = Depends(get_db_for_request),
+):
+    result = db.execute(
+        text("DELETE FROM exceptions WHERE exception_id = CAST(:eid AS uuid) AND org_id = CAST(:oid AS uuid)"),
+        {"eid": exception_id, "oid": ctx["org_id"]})
+    if result.rowcount == 0:
+        raise HTTPException(404, "Exception not found")
 
-# ── S19: Supply chain reconciliation ─────────────────────────────────────────
+
+@app.delete("/org/delete", status_code=204)
+def delete_org(
+    ctx: dict = Depends(get_request_context),
+    db: Session = Depends(get_db_for_request),
+):
+    oid = ctx["org_id"]
+    for table in (
+        "exceptions", "edit_history", "activity_log", "training_exports",
+        "line_items", "invoices", "po_line_items", "purchase_orders",
+        "waybills", "grn", "material_returns", "vendor_scores", "vendors",
+        "hsn_profile_codes", "outward_hsn_codes", "org_drive_folders",
+    ):
+        try:
+            db.execute(text(f"DELETE FROM {table} WHERE org_id = CAST(:oid AS uuid)"), {"oid": oid})
+        except Exception:
+            pass
+    db.execute(text("DELETE FROM orgs WHERE org_id = CAST(:oid AS uuid)"), {"oid": oid})
+    db.commit()
+
+
+# ── Outward HSN ───────────────────────────────────────────────────────────────
+
+def _list_outward_hsn(db: Session, org_id: str) -> list[dict]:
+    try:
+        rows = db.execute(
+            text("SELECT code, description FROM outward_hsn_codes "
+                 "WHERE org_id = CAST(:oid AS uuid) ORDER BY added_at ASC"),
+            {"oid": org_id}).mappings().all()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+class _OutwardHsnBody(BaseModel):
+    code: str
+    description: Optional[str] = None
+
+@app.get("/org/outward-hsn")
+def get_outward_hsn(ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
+    return {"codes": _list_outward_hsn(db, ctx["org_id"])}
+
+@app.post("/org/outward-hsn")
+def add_outward_hsn(body: _OutwardHsnBody, ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
+    code = body.code.strip().upper()
+    if not code:
+        raise HTTPException(400, "code is required")
+    db.execute(
+        text("INSERT INTO outward_hsn_codes (org_id, code, description) "
+             "VALUES (CAST(:oid AS uuid), :code, :desc) "
+             "ON CONFLICT (org_id, code) DO UPDATE SET description = EXCLUDED.description"),
+        {"oid": ctx["org_id"], "code": code, "desc": body.description})
+    db.commit()
+    return {"codes": _list_outward_hsn(db, ctx["org_id"])}
+
+@app.delete("/org/outward-hsn/{code}")
+def remove_outward_hsn(code: str, ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
+    db.execute(
+        text("DELETE FROM outward_hsn_codes WHERE org_id = CAST(:oid AS uuid) AND code = :code"),
+        {"oid": ctx["org_id"], "code": code.upper()})
+    db.commit()
+    return {"codes": _list_outward_hsn(db, ctx["org_id"])}
+
+
+# ── Supply chain reconciliation ───────────────────────────────────────────────
 
 @app.post("/supply-chain/reconcile")
 def run_supply_chain_reconcile(
     ctx: dict = Depends(get_request_context),
     db: Session = Depends(get_db_for_request),
 ):
-    """Runs all 9 cross-document checks and writes results to exceptions table.
-    Clears all open exceptions first, then inserts fresh results.
-    Call after any folder sync to keep exceptions current."""
     invoices = [dict(r) for r in db.execute(text(
-        "SELECT invoice_id, invoice_number, po_number, invoice_date, "
-        "total_amount, vendor_id "
+        "SELECT invoice_id, invoice_number, po_number, invoice_date, total_amount, vendor_id "
         "FROM invoices WHERE status NOT IN ('FAILED', 'PLACEHOLDER')"
     )).mappings().all()]
     pos = [dict(r) for r in db.execute(text(
-        "SELECT po_id, po_number, requested_transport_mode, incoterm, "
-        "total_amount, vendor_id FROM purchase_orders"
+        "SELECT po_id, po_number, requested_transport_mode, incoterm, total_amount, vendor_id "
+        "FROM purchase_orders"
     )).mappings().all()]
     wbs = [dict(r) for r in db.execute(text(
         "SELECT waybill_id, ewb_number, ewb_date, ewb_valid_until, "
@@ -1278,20 +1558,15 @@ def run_supply_chain_reconcile(
     for inv in invoices:
         inv["invoice_id"] = str(inv["invoice_id"])
 
-    exceptions = sc_reconciliation.run_supply_chain_reconciliation(
-        invoices, pos, wbs, grns, mrs)
-
-    # Clear all open supply-chain exceptions before inserting fresh ones
+    exceptions = sc_reconciliation.run_supply_chain_reconciliation(invoices, pos, wbs, grns, mrs)
     db.execute(
-        text("DELETE FROM exceptions "
-             "WHERE org_id = CAST(:oid AS uuid) AND status = 'open'"),
+        text("DELETE FROM exceptions WHERE org_id = CAST(:oid AS uuid) AND status = 'open'"),
         {"oid": ctx["org_id"]})
     n = exception_store.insert_exceptions(db, ctx["org_id"], exceptions)
     db.commit()
     log_activity(
         db, ctx["org_id"], actor_type="ai", action="supply_chain_reconcile",
-        entity_type="reconciliation",
-        summary=f"{n} supply-chain exceptions written")
+        entity_type="reconciliation", summary=f"{n} compliance alerts written")
     return {
         "exceptions_written": n,
         "invoices_checked": len(invoices),
@@ -1302,16 +1577,12 @@ def run_supply_chain_reconcile(
     }
 
 
-# ── S17: Waybill routes ───────────────────────────────────────────────────────
+# ── Waybill routes ────────────────────────────────────────────────────────────
 
 @app.post("/waybills/sync")
-def sync_waybills(
-    ctx: dict = Depends(get_request_context),
-    db: Session = Depends(get_db_for_request),
-):
+def sync_waybills(ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
     row = db.execute(
-        text("SELECT folder_id FROM org_drive_folders "
-             "WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'waybills'"),
+        text("SELECT folder_id FROM org_drive_folders WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'waybills'"),
         {"oid": ctx["org_id"]}).fetchone()
     if not row or not row[0]:
         raise HTTPException(400, "No Waybill Drive folder registered.")
@@ -1320,22 +1591,16 @@ def sync_waybills(
     try:
         results = sync_org_waybill_folder(
             db, ctx["org_id"], row[0], core_waybill_extractor, drive_connector,
-            waybill_schema, str(UPLOAD_DIR), already_processed,
-            waybill_store.save_waybill_row)
+            waybill_schema, str(UPLOAD_DIR), already_processed, waybill_store.save_waybill_row)
     except Exception as e:
         raise HTTPException(500, f"Waybill sync failed: {e}")
     db.execute(
-        text("UPDATE org_drive_folders SET last_synced_at = now() "
-             "WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'waybills'"),
+        text("UPDATE org_drive_folders SET last_synced_at = now() WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'waybills'"),
         {"oid": ctx["org_id"]})
     return {"new_files_processed": len(results), "results": results}
 
 @app.get("/waybills")
-def list_waybills_route(
-    db: Session = Depends(get_db_for_request),
-    ctx: dict = Depends(get_request_context),
-    limit: int = Query(default=100, ge=1, le=500),
-):
+def list_waybills_route(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context), limit: int = Query(default=100, ge=1, le=500)):
     return waybill_store.list_waybills(ctx["org_id"], limit=limit)
 
 @app.get("/waybills/{waybill_id}")
@@ -1346,16 +1611,12 @@ def get_waybill_route(waybill_id: str, ctx: dict = Depends(get_request_context))
     return rec
 
 
-# ── S17: GRN routes ───────────────────────────────────────────────────────────
+# ── GRN routes ────────────────────────────────────────────────────────────────
 
 @app.post("/grn/sync")
-def sync_grn(
-    ctx: dict = Depends(get_request_context),
-    db: Session = Depends(get_db_for_request),
-):
+def sync_grn(ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
     row = db.execute(
-        text("SELECT folder_id FROM org_drive_folders "
-             "WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'grn'"),
+        text("SELECT folder_id FROM org_drive_folders WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'grn'"),
         {"oid": ctx["org_id"]}).fetchone()
     if not row or not row[0]:
         raise HTTPException(400, "No GRN Drive folder registered.")
@@ -1368,17 +1629,12 @@ def sync_grn(
     except Exception as e:
         raise HTTPException(500, f"GRN sync failed: {e}")
     db.execute(
-        text("UPDATE org_drive_folders SET last_synced_at = now() "
-             "WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'grn'"),
+        text("UPDATE org_drive_folders SET last_synced_at = now() WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'grn'"),
         {"oid": ctx["org_id"]})
     return {"new_files_processed": len(results), "results": results}
 
 @app.get("/grn")
-def list_grn_route(
-    db: Session = Depends(get_db_for_request),
-    ctx: dict = Depends(get_request_context),
-    limit: int = Query(default=100, ge=1, le=500),
-):
+def list_grn_route(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context), limit: int = Query(default=100, ge=1, le=500)):
     return grn_store.list_grns(ctx["org_id"], limit=limit)
 
 @app.get("/grn/{grn_id}")
@@ -1389,16 +1645,12 @@ def get_grn_route(grn_id: str, ctx: dict = Depends(get_request_context)):
     return rec
 
 
-# ── S17: Material Return routes ───────────────────────────────────────────────
+# ── Material Return routes ────────────────────────────────────────────────────
 
 @app.post("/material-returns/sync")
-def sync_material_returns(
-    ctx: dict = Depends(get_request_context),
-    db: Session = Depends(get_db_for_request),
-):
+def sync_material_returns(ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
     row = db.execute(
-        text("SELECT folder_id FROM org_drive_folders "
-             "WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'material_return'"),
+        text("SELECT folder_id FROM org_drive_folders WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'material_return'"),
         {"oid": ctx["org_id"]}).fetchone()
     if not row or not row[0]:
         raise HTTPException(400, "No Material Return Drive folder registered.")
@@ -1407,22 +1659,16 @@ def sync_material_returns(
     try:
         results = sync_org_material_return_folder(
             db, ctx["org_id"], row[0], core_mr_extractor, drive_connector,
-            mr_schema, str(UPLOAD_DIR), already_processed,
-            material_return_store.save_mr_row)
+            mr_schema, str(UPLOAD_DIR), already_processed, material_return_store.save_mr_row)
     except Exception as e:
         raise HTTPException(500, f"Material return sync failed: {e}")
     db.execute(
-        text("UPDATE org_drive_folders SET last_synced_at = now() "
-             "WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'material_return'"),
+        text("UPDATE org_drive_folders SET last_synced_at = now() WHERE org_id = CAST(:oid AS uuid) AND folder_type = 'material_return'"),
         {"oid": ctx["org_id"]})
     return {"new_files_processed": len(results), "results": results}
 
 @app.get("/material-returns")
-def list_material_returns_route(
-    db: Session = Depends(get_db_for_request),
-    ctx: dict = Depends(get_request_context),
-    limit: int = Query(default=100, ge=1, le=500),
-):
+def list_material_returns_route(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context), limit: int = Query(default=100, ge=1, le=500)):
     return material_return_store.list_material_returns(ctx["org_id"], limit=limit)
 
 @app.get("/material-returns/{mrn_id}")
@@ -1433,13 +1679,10 @@ def get_material_return_route(mrn_id: str, ctx: dict = Depends(get_request_conte
     return rec
 
 
-# ── S17: Vendor scorecard ─────────────────────────────────────────────────────
+# ── Vendor scorecard ──────────────────────────────────────────────────────────
 
 @app.get("/vendors/scorecard")
-def get_vendor_scorecard(
-    db: Session = Depends(get_db_for_request),
-    ctx: dict = Depends(get_request_context),
-):
+def get_vendor_scorecard(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context)):
     rows = db.execute(
         text("""
             SELECT vs.vendor_id, v.vendor_name, vs.score, vs.grade,
@@ -1455,31 +1698,20 @@ def get_vendor_scorecard(
     return [dict(r) for r in rows]
 
 @app.get("/vendors/{vendor_id}/score")
-def get_vendor_score(
-    vendor_id: str,
-    db: Session = Depends(get_db_for_request),
-    ctx: dict = Depends(get_request_context),
-):
+def get_vendor_score(vendor_id: str, db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context)):
     row = db.execute(
-        text("SELECT vs.*, v.vendor_name, v.vendor_gstin "
-             "FROM vendor_scores vs "
+        text("SELECT vs.*, v.vendor_name, v.vendor_gstin FROM vendor_scores vs "
              "JOIN vendors v ON v.vendor_id = vs.vendor_id "
-             "WHERE vs.org_id = CAST(:oid AS uuid) "
-             "AND vs.vendor_id = CAST(:vid AS uuid)"),
+             "WHERE vs.org_id = CAST(:oid AS uuid) AND vs.vendor_id = CAST(:vid AS uuid)"),
         {"oid": ctx["org_id"], "vid": vendor_id}).mappings().fetchone()
     if not row:
         raise HTTPException(404, "Vendor score not found")
     return dict(row)
 
 @app.post("/vendors/{vendor_id}/score/recalculate")
-def recalculate_vendor_score(
-    vendor_id: str,
-    db: Session = Depends(get_db_for_request),
-    ctx: dict = Depends(get_request_context),
-):
+def recalculate_vendor_score(vendor_id: str, db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context)):
     try:
-        return vendor_score_store.compute_and_save_vendor_score(
-            db, ctx["org_id"], vendor_id)
+        return vendor_score_store.compute_and_save_vendor_score(db, ctx["org_id"], vendor_id)
     except Exception as e:
         raise HTTPException(500, f"Score calculation failed: {e}")
 
@@ -1487,30 +1719,29 @@ def recalculate_vendor_score(
 # ── Debug ─────────────────────────────────────────────────────────────────────
 
 @app.get("/debug/drive-files")
-def debug_drive_files(
-    folder_type: str = Query(default="invoices"),
-    ctx: dict = Depends(get_request_context),
-    db: Session = Depends(get_db_for_request),
-):
+def debug_drive_files(folder_type: str = Query(default="invoices"), ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
     row = db.execute(
-        text("SELECT folder_id FROM org_drive_folders "
-             "WHERE org_id = CAST(:oid AS uuid) AND folder_type = :ftype"),
+        text("SELECT folder_id FROM org_drive_folders WHERE org_id = CAST(:oid AS uuid) AND folder_type = :ftype"),
         {"oid": ctx["org_id"], "ftype": folder_type}).fetchone()
     if not row or not row[0]:
         raise HTTPException(400, f"No folder registered for type '{folder_type}'")
     files = drive_connector.list_folder_files(row[0])
-    return {"folder_type": folder_type, "folder_id": row[0],
-            "file_count": len(files), "files": files}
-# Add to main.py temporarily
+    return {"folder_type": folder_type, "folder_id": row[0], "file_count": len(files), "files": files}
+
 @app.get("/debug/token")
 def debug_token(authorization: str = Header(None)):
     return {"raw_header": authorization}
-# Serve React frontend
+
+
+# ── Serve React frontend ──────────────────────────────────────────────────────
+
 app.mount("/assets", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static/assets")), name="assets")
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def serve_frontend(full_path: str):
-    if full_path.startswith(("invoices", "itc", "org", "drive", "purchase", "gstr", "waybills", "grn", "material", "vendors", "supply", "activity", "exceptions", "debug")):
+    if full_path.startswith(("invoices", "itc", "org", "drive", "purchase", "gstr", "waybills",
+                              "grn", "material", "vendors", "supply", "activity", "exceptions",
+                              "debug", "training", "analytics", "health", "me", "admin")):
         raise HTTPException(status_code=404, detail="Not Found")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     file_path = os.path.join(static_dir, full_path)

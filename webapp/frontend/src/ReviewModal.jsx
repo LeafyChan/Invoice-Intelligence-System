@@ -27,7 +27,7 @@
 
 import { useState, useEffect } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";
 
 // ── Linked document tab definitions ─────────────────────────────────────────
 const DOC_TABS = [
@@ -96,6 +96,65 @@ export default function ReviewModal({ invoiceId, data, getToken, onClose, onSave
   const [err, setErr]       = useState(null);
   const [saved, setSaved]   = useState(false);
   const [reconciliationIssues, setReconciliationIssues] = useState([]);
+  // Issue 9: HSN one-click add feedback per code
+  const [hsnToasts, setHsnToasts] = useState({});
+
+  async function addHsnToProfile(code) {
+    if (!code) return;
+    setHsnToasts(p => ({ ...p, [code]: "adding" }));
+    try {
+      const tok = await getToken();
+      const res = await fetch(`${API_BASE}/org/hsn-profile/codes`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code.trim().toUpperCase(), code_type: "HSN" }),
+      });
+      // 200 = inserted or upserted; treat both as success
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setHsnToasts(p => ({ ...p, [code]: "added" }));
+    } catch {
+      setHsnToasts(p => ({ ...p, [code]: "error" }));
+    }
+  }
+
+  // Issue 6 fix: self-fetch full detail (with line_items) if caller passed
+  // the sparse list-row which has no line_items array yet.
+  const [fullDetail, setFullDetail] = useState(null);
+  const [lineItemsLoading, setLineItemsLoading] = useState(false);
+  const [lineItemsErr, setLineItemsErr] = useState(null);
+
+  useEffect(() => {
+    if (!invoiceId || !getToken) return;
+    // If data already has line_items (even an empty array), no need to fetch.
+    if (data && Array.isArray(data.line_items)) {
+      setFullDetail(null);
+      return;
+    }
+    // Sparse row — fetch full detail so line items render.
+    // Reuse a cached token promise to avoid a second getToken() call in the
+    // same render cycle — Clerk rate-limits concurrent getToken() calls (429).
+    setLineItemsLoading(true);
+    setLineItemsErr(null);
+    setFullDetail(null);
+    const tokenPromise = getToken();
+    tokenPromise.then(tok =>
+      fetch(`${API_BASE}/invoices/${invoiceId}`, {
+        headers: { Authorization: `Bearer ${tok}` },
+      })
+    ).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }).then(d => {
+      setFullDetail(d);
+    }).catch(e => {
+      setLineItemsErr(String(e));
+    }).finally(() => {
+      setLineItemsLoading(false);
+    });
+  }, [invoiceId, data, getToken]);
+
+  // Merge: prefer fullDetail for line_items; use data for header fields.
+  const effectiveData = fullDetail ? { ...data, ...fullDetail } : data;
 
   // ── Multi-doc viewer state ──────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState("invoice");
@@ -116,39 +175,47 @@ export default function ReviewModal({ invoiceId, data, getToken, onClose, onSave
     setDocSources({});
     if (!invoiceId) return;
 
-    // 1. Fetch invoice file URL (existing logic)
+    // One getToken() call for the whole effect — Clerk rate-limits per call,
+    // so firing three parallel getToken() calls on every modal open causes 429s.
     setDocSource("invoice", { loading: true });
-    getToken().then(tok =>
-      fetch(`${API_BASE}/invoices/${invoiceId}/file-url`, { headers: { Authorization: `Bearer ${tok}` } })
-    ).then(r => r.json()).then(d => {
-      if (d.url) {
-        setDocSource("invoice", { loading: false, url: d.url });
-      } else if (d.drive_file_id) {
-        setDocSource("invoice", { loading: false, driveFileId: d.drive_file_id, storageError: d.storage_error });
-      } else {
-        setDocSource("invoice", { loading: false, err: true, storageError: d.storage_error });
+    getToken().then(async tok => {
+      // 1. Invoice file URL
+      try {
+        const r = await fetch(`${API_BASE}/invoices/${invoiceId}/file-url`, {
+          headers: { Authorization: `Bearer ${tok}` },
+        });
+        const d = await r.json();
+        if (d.url) {
+          setDocSource("invoice", { loading: false, url: d.url });
+        } else if (d.drive_file_id) {
+          setDocSource("invoice", { loading: false, driveFileId: d.drive_file_id, storageError: d.storage_error });
+        } else {
+          setDocSource("invoice", { loading: false, err: true, storageError: d.storage_error });
+        }
+      } catch {
+        setDocSource("invoice", { loading: false, err: true });
       }
-    }).catch(() => setDocSource("invoice", { loading: false, err: true }));
 
-    // 2. Fetch linked doc Drive IDs (PO, Waybill, GRN, MR)
-    getToken().then(tok => fetchLinkedDocIds(invoiceId, tok)).then(linked => {
+      // 2. Linked doc Drive IDs (PO, Waybill, GRN, MR) — reuse same token
+      const linked = await fetchLinkedDocIds(invoiceId, tok);
       for (const key of ["purchase_order", "waybill", "grn", "material_return"]) {
         const fid = linked[key];
         if (fid) setDocSource(key, { driveFileId: fid, loading: false });
         else setDocSource(key, { loading: false, unavailable: true });
       }
-    });
+    }).catch(() => setDocSource("invoice", { loading: false, err: true }));
   }, [invoiceId, getToken]);
 
   if (!invoiceId || !data) return null;
 
-  const missing = blankFields(data);
+  const missing = blankFields(effectiveData || data);
   // Show every field for editing, but visually flag the missing ones —
   // a human correcting one wrong field often wants to glance at neighbors.
   const fieldsToShow = REVIEW_FIELDS;
 
   function fieldValue(field) {
-    return draft[field] !== undefined ? draft[field] : (data[field] ?? "");
+    const src = effectiveData || data;
+    return draft[field] !== undefined ? draft[field] : (src[field] ?? "");
   }
 
   function lineItemValue(lineItemId, field, original) {
@@ -311,7 +378,8 @@ export default function ReviewModal({ invoiceId, data, getToken, onClose, onSave
                 </div>
               )}
               {fieldsToShow.map(([label, field, inputType]) => {
-                const isBlank = data[field] == null || data[field] === "";
+                const src = effectiveData || data;
+                const isBlank = src[field] == null || src[field] === "";
                 return (
                   <div key={field} style={s.formRow}>
                     <label style={{ ...s.formLabel, ...(isBlank ? s.formLabelBlank : {}) }}>
@@ -329,16 +397,22 @@ export default function ReviewModal({ invoiceId, data, getToken, onClose, onSave
                 );
               })}
 
-              {/* ── Line items — previously missing entirely from this
-                  modal, including the per-line tax % the person flagged
-                  as not showing up anywhere here. ── */}
+              {/* ── Line items ── */}
               <div style={s.lineItemsHeading}>
-                Line items {data.line_items?.length > 0 ? `(${data.line_items.length})` : ""}
+                Line items {effectiveData?.line_items?.length > 0 ? `(${effectiveData.line_items.length})` : ""}
               </div>
-              {(!data.line_items || data.line_items.length === 0) && (
+              {lineItemsLoading && (
+                <div style={s.noLineItems}>Loading line items…</div>
+              )}
+              {lineItemsErr && !lineItemsLoading && (
+                <div style={{ ...s.noLineItems, color: "#B91C1C" }}>
+                  Failed to load line items: {lineItemsErr}
+                </div>
+              )}
+              {!lineItemsLoading && !lineItemsErr && (!effectiveData?.line_items || effectiveData.line_items.length === 0) && (
                 <div style={s.noLineItems}>No line items recorded for this invoice.</div>
               )}
-              {data.line_items?.map(item => {
+              {effectiveData?.line_items?.map(item => {
                 const lid = item.line_item_id;
                 return (
                   <div key={lid} style={s.lineItemCard}>
@@ -352,12 +426,35 @@ export default function ReviewModal({ invoiceId, data, getToken, onClose, onSave
                     <div style={s.lineItemGrid}>
                       <div>
                         <label style={s.lineItemLabel}>HSN/SAC</label>
-                        <input
-                          type="text"
-                          value={lineItemValue(lid, "hsn_code", item.hsn_code)}
-                          onChange={e => setLineItemField(lid, "hsn_code", e.target.value)}
-                          style={s.formInputSmall}
-                        />
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <input
+                            type="text"
+                            value={lineItemValue(lid, "hsn_code", item.hsn_code)}
+                            onChange={e => setLineItemField(lid, "hsn_code", e.target.value)}
+                            style={s.formInputSmall}
+                          />
+                          {/* Issue 9: one-click add to ITC profile */}
+                          {item.hsn_code && (() => {
+                            const toast = hsnToasts[item.hsn_code];
+                            if (toast === "added") return <span style={{ fontSize: 10, color: "#15803D" }}>✓ In profile</span>;
+                            if (toast === "error") return <span style={{ fontSize: 10, color: "#B91C1C" }}>Error</span>;
+                            return (
+                              <button
+                                title={`Add HSN ${item.hsn_code} to ITC profile`}
+                                onClick={() => addHsnToProfile(item.hsn_code)}
+                                disabled={toast === "adding"}
+                                style={{
+                                  background: "#EEF2FF", border: "1px solid #C7D2FE",
+                                  borderRadius: 4, color: "#3730A3", fontSize: 11,
+                                  padding: "1px 5px", cursor: "pointer", lineHeight: 1.4,
+                                  fontFamily: "inherit", flexShrink: 0,
+                                }}
+                              >
+                                {toast === "adding" ? "…" : "+"}
+                              </button>
+                            );
+                          })()}
+                        </div>
                       </div>
                       <div>
                         <label style={s.lineItemLabel}>Qty</label>

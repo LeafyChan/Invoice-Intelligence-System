@@ -45,7 +45,7 @@ ALLOWED_ORIGINS = [
     o.strip() for o in os.environ.get("CLERK_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 ]
 
-_jwk_client = PyJWKClient(CLERK_JWKS_URL)
+_jwk_client = PyJWKClient(CLERK_JWKS_URL, cache_keys=True, cache_jwk_set=True, lifespan=3600)
 
 
 def _verify_token(token: str) -> dict:
@@ -57,6 +57,7 @@ def _verify_token(token: str) -> dict:
         signing_key.key,
         algorithms=["RS256"],
         options={"require": ["exp", "iat", "sub"]},
+        leeway=30,
     )
 
     # azp check: confirms the token was issued for a frontend we recognize,
@@ -90,8 +91,10 @@ def get_current_org(authorization: str = Header(...)) -> dict:
     try:
         payload = _verify_token(token)
     except jwt.ExpiredSignatureError:
+        import logging; logging.warning("AUTH 401: token expired")
         raise HTTPException(401, "Session token expired")
     except jwt.InvalidTokenError as e:
+        import logging; logging.warning(f"AUTH 401: invalid token: {e}")
         raise HTTPException(401, f"Invalid session token: {e}")
 
     if payload.get("sts") == "pending":

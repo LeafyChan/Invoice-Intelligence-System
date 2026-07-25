@@ -14,8 +14,9 @@
  */
 
 import { useState, useEffect } from "react";
+import { useOrganization } from "@clerk/clerk-react";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";
 
 // ── Drive folder section ──────────────────────────────────────────────────────
 
@@ -134,6 +135,65 @@ export default function Settings({ getToken }) {
   const [manualDesc, setManualDesc]         = useState("");
   const [manualAdding, setManualAdding]     = useState(false);
   const [removingCode, setRemovingCode]     = useState(null);
+  // Issue 12: delete org
+  const { organization } = useOrganization();
+  const [deleteOrgName, setDeleteOrgName]   = useState("");
+  const [deletingOrg, setDeletingOrg]       = useState(false);
+  const [deleteOrgMsg, setDeleteOrgMsg]     = useState(null);
+
+  // Issue 8: outward supply HSN codes (what the business *sells*)
+  // Stored separately from the vendor-profile HSN codes generated from invoices.
+  const [outwardHsn, setOutwardHsn]               = useState([]);      // [{code, description}]
+  const [outwardHsnInput, setOutwardHsnInput]     = useState("");
+  const [outwardHsnDesc, setOutwardHsnDesc]       = useState("");
+  const [outwardHsnAdding, setOutwardHsnAdding]   = useState(false);
+  const [outwardHsnMsg, setOutwardHsnMsg]         = useState(null);
+
+  async function handleDeleteOrg() {
+    if (!organization || deleteOrgName !== organization.name) return;
+    setDeletingOrg(true); setDeleteOrgMsg(null);
+    try {
+      // 1. Cascade delete all org data from backend
+      await authedFetch("/org/delete", { method: "DELETE" });
+      // 2. Destroy the Clerk org (removes membership, redirects on completion)
+      await organization.destroy();
+      // Redirect handled by Clerk post-destroy
+    } catch (e) {
+      setDeleteOrgMsg(`Delete failed: ${e.message}`);
+      setDeletingOrg(false);
+    }
+  }
+
+  async function handleAddOutwardHsn() {
+    const code = outwardHsnInput.trim().toUpperCase();
+    if (!code) return;
+    setOutwardHsnAdding(true); setOutwardHsnMsg(null);
+    try {
+      const res = await authedFetch("/org/outward-hsn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, description: outwardHsnDesc.trim() || null }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail || `HTTP ${res.status}`);
+      setOutwardHsn(d.codes || []);
+      setOutwardHsnInput(""); setOutwardHsnDesc("");
+      setOutwardHsnMsg({ type: "ok", text: `${code} added to outward supply profile.` });
+    } catch (e) {
+      setOutwardHsnMsg({ type: "err", text: `Failed: ${e.message}` });
+    } finally { setOutwardHsnAdding(false); }
+  }
+
+  async function handleRemoveOutwardHsn(code) {
+    try {
+      const res = await authedFetch(`/org/outward-hsn/${encodeURIComponent(code)}`, { method: "DELETE" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail || `HTTP ${res.status}`);
+      setOutwardHsn(d.codes || []);
+    } catch (e) {
+      setOutwardHsnMsg({ type: "err", text: `Remove failed: ${e.message}` });
+    }
+  }
 
   async function authedFetch(path, options = {}) {
     const tok = await getToken();
@@ -173,10 +233,15 @@ export default function Settings({ getToken }) {
           setBizDescSaved(sd.business_description);
         }
 
-        // HSN profile
+        // HSN profile (vendor purchase profile — what vendors supply TO us)
         const hd = await fetch(`${API_BASE}/org/hsn-profile`, { headers: h })
           .then(r => r.ok ? r.json() : null).catch(() => null);
         if (hd?.has_profile) setHsnProfile(hd);
+
+        // Issue 8: outward supply HSN codes (what WE sell)
+        const od = await fetch(`${API_BASE}/org/outward-hsn`, { headers: h })
+          .then(r => r.ok ? r.json() : null).catch(() => null);
+        if (Array.isArray(od?.codes)) setOutwardHsn(od.codes);
       } finally {
         setLoading(false);
       }
@@ -349,13 +414,65 @@ export default function Settings({ getToken }) {
           />
         </div>
 
-        {/* ── Business profile + HSN ────────────────────────────────────── */}
+        {/* ── Issue 8: Outward supply HSN codes ────────────────────────── */}
         <div style={s.section}>
-          <div style={s.sectionTitle}>Business profile</div>
+          <div style={s.sectionTitle}>What your business sells (outward supply)</div>
           <p style={s.hint}>
-            Describe your business in one sentence. Used to generate a list of
-            HSN/SAC codes expected on your purchase invoices — line items are then
-            automatically badged as expected, ambiguous, or unknown.
+            Add the HSN/SAC codes for goods or services <strong>your business sells</strong>.
+            These are used to determine ITC eligibility — the GST you pay on purchases
+            is only claimable as Input Tax Credit if it relates to your taxable outward supply.
+            This is separate from the vendor HSN profile below, which is derived from your
+            purchase invoices.
+          </p>
+
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+            <input type="text" placeholder="HSN/SAC code e.g. 9403"
+              value={outwardHsnInput} onChange={e => setOutwardHsnInput(e.target.value)}
+              style={{ ...s.input, width: 130, flex: "none", fontFamily: "monospace" }} />
+            <input type="text" placeholder="Description (optional)"
+              value={outwardHsnDesc} onChange={e => setOutwardHsnDesc(e.target.value)}
+              style={{ ...s.input, flex: 1, minWidth: 160 }} />
+            <button onClick={handleAddOutwardHsn} disabled={outwardHsnAdding || !outwardHsnInput.trim()} style={s.primaryBtn}>
+              {outwardHsnAdding ? "Adding…" : "Add"}
+            </button>
+          </div>
+
+          {outwardHsn.length > 0 ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+              {outwardHsn.map(item => (
+                <div key={item.code} title={item.description || item.code}
+                  style={{ display: "flex", alignItems: "center", gap: 3,
+                    fontFamily: "monospace", fontSize: 11, background: "#EEF2FF",
+                    color: "#3730A3", borderRadius: 4, padding: "2px 4px 2px 7px" }}>
+                  {item.code}
+                  {item.description && <span style={{ fontSize: 10, color: "#6B7280", fontFamily: "Inter,system-ui,sans-serif", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>&nbsp;{item.description}</span>}
+                  <button onClick={() => handleRemoveOutwardHsn(item.code)}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: "0 2px", color: "#3730A3", fontSize: 12, lineHeight: 1, opacity: 0.6 }}>×</button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontSize: 12, color: "#9CA3AF", margin: "4px 0 0" }}>
+              No outward supply codes added yet. Add at least one to enable ITC eligibility checks.
+            </p>
+          )}
+
+          {outwardHsnMsg && (
+            <div style={{ ...(outwardHsnMsg.type === "ok" ? s.msgOk : s.msgErr), marginTop: 10 }}>
+              {outwardHsnMsg.text}
+            </div>
+          )}
+        </div>
+
+        {/* ── Vendor HSN profile (what vendors supply to us) ────────────── */}
+        <div style={s.section}>
+          <div style={s.sectionTitle}>Vendor supply profile (purchase HSN codes)</div>
+          <p style={s.hint}>
+            Describe your business in one sentence. Used to generate a list of HSN/SAC
+            codes expected on your <strong>purchase invoices</strong> (what vendors supply
+            to you — not what you sell). Line items are then automatically badged as
+            expected, ambiguous, or unknown. This is the <em>vendor</em> profile, not your
+            outward supply profile above.
           </p>
 
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 12 }}>
@@ -538,6 +655,40 @@ export default function Settings({ getToken }) {
             <li>Copy the folder URL — the ID is the last segment.</li>
             <li>Paste it in the relevant section above and click Save, then Sync now.</li>
           </ol>
+        </div>
+
+        {/* ── Issue 12: Danger Zone — delete organisation ────────────────── */}
+        <div style={{ ...s.section, borderBottom: "none", borderTop: "2px solid #FEE2E2", paddingTop: 28, marginTop: 8 }}>
+          <div style={{ ...s.sectionTitle, color: "#B91C1C" }}>Danger Zone</div>
+          <p style={{ ...s.hint, color: "#6B7280" }}>
+            Permanently deletes this organisation and all its data — invoices, POs, waybills,
+            GRNs, exceptions, and BigQuery rows. This cannot be undone.
+          </p>
+          <p style={{ ...s.hint, fontSize: 12, color: "#9CA3AF" }}>
+            Type <strong style={{ color: "#111318" }}>{organization?.name}</strong> to confirm.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              type="text"
+              placeholder={`Type "${organization?.name}" to confirm`}
+              value={deleteOrgName}
+              onChange={e => setDeleteOrgName(e.target.value)}
+              style={{ ...s.input, maxWidth: 280, borderColor: "#FECACA" }}
+            />
+            <button
+              disabled={deletingOrg || deleteOrgName !== organization?.name}
+              onClick={handleDeleteOrg}
+              style={{
+                background: "#B91C1C", color: "#fff", border: "none", borderRadius: 6,
+                padding: "7px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                fontFamily: "inherit", whiteSpace: "nowrap",
+                opacity: deleteOrgName !== organization?.name ? 0.4 : 1,
+              }}
+            >
+              {deletingOrg ? "Deleting…" : "Delete organisation"}
+            </button>
+          </div>
+          {deleteOrgMsg && <div style={{ ...s.msgErr, marginTop: 10 }}>{deleteOrgMsg}</div>}
         </div>
       </div>
     </div>

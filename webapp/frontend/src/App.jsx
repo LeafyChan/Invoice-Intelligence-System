@@ -12,6 +12,7 @@
  */
 
 import { useState, Component } from "react";
+import { useEffect } from "react";
 import {
   SignedIn,
   SignedOut,
@@ -19,6 +20,7 @@ import {
   UserButton,
   useAuth,
   useOrganization,
+  useOrganizationList,
   OrganizationSwitcher,
   CreateOrganization,
 } from "@clerk/clerk-react";
@@ -26,11 +28,9 @@ import InvoiceList     from "./InvoiceList";
 import Settings        from "./Settings";
 import ActivityLog     from "./ActivityLog";
 import ItcSummary      from "./Itcsummary";
-import Exceptions      from "./Exceptions";
 import Analytics       from "./Analytics";
 import VendorScorecard from "./VendorScorecard";
-
-// ── Error boundary ────────────────────────────────────────────────────────────
+import DocumentVault from "./DocumentVault";
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -153,14 +153,18 @@ function CreateOrgScreen() {
 
 // ── Top navigation ────────────────────────────────────────────────────────────
 
+// Issue 11: Purchase Orders / Waybills / GRN / Material Returns tabs removed.
+// The full 5-doc chain is navigable from each invoice row (P/W/G/M indicators)
+// and from ReviewModal's tab bar. Vendors tab kept — it's aggregate intelligence,
+// not a standalone doc list.
 const TOP_TABS = [
-  { id: "Invoices",        label: "Invoices",        icon: "📄" },
-  { id: "Vendors",         label: "Vendors",         icon: "🏭" },
-  { id: "Exceptions",      label: "Exceptions",      icon: "⚠" },
-  { id: "ITC Summary",     label: "ITC Summary",     icon: "₹"  },
-  { id: "Analytics",       label: "Analytics",       icon: "📊" },
-  { id: "Activity",        label: "Activity",        icon: "🕑" },
-  { id: "Settings",        label: "Settings",        icon: "⚙"  },
+  { id: "Invoices",    label: "Invoices",    icon: "📄" },
+  { id: "Vendors",     label: "Vendors",     icon: "🏭" },
+  { id: "Exceptions",  label: "Document Vault", icon: "📂" },
+  { id: "ITC Summary", label: "ITC Summary", icon: "₹"  },
+  { id: "Analytics",   label: "Analytics",   icon: "📊" },
+  { id: "Activity",    label: "Activity",    icon: "🕑" },
+  { id: "Settings",    label: "Settings",    icon: "⚙"  },
 ];
 
 function TopNav({ activeTab, setActiveTab }) {
@@ -216,9 +220,40 @@ const ns = {
 function AppShell() {
   const { getToken }     = useAuth();
   const { organization } = useOrganization();
-  const [activeTab,    setActiveTab]    = useState("Invoices");
+  const { userMemberships, setActive, isLoaded } = useOrganizationList({
+    userMemberships: { infinite: true },
+  });
+  const [activeTab, setActiveTab] = useState("Invoices");
 
-  if (!organization) return <CreateOrgScreen />;
+  // Issue 5 fix: if the user already has org memberships but no active org
+  // (e.g. returning user, or just logged in fresh), auto-activate the first
+  // membership instead of showing the "create org" screen, which would
+  // create a new orphan org on every login.
+  useEffect(() => {
+    if (!isLoaded || organization) return;
+    const memberships = userMemberships?.data ?? [];
+    if (memberships.length > 0 && setActive) {
+      setActive({ organization: memberships[0].organization });
+    }
+  }, [isLoaded, organization, userMemberships, setActive]);
+
+  // Show the create-org screen only when we're certain there are no memberships.
+  const memberships = userMemberships?.data ?? [];
+  const noMemberships = isLoaded && memberships.length === 0;
+
+  if (!organization) {
+    if (!isLoaded || !noMemberships) {
+      // Still loading, or has memberships — useEffect above will activate one.
+      return (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center",
+          justifyContent: "center", background: "#F7F8FA",
+          fontFamily: "Inter, system-ui, sans-serif", color: "#6B7280", fontSize: 14 }}>
+          Loading…
+        </div>
+      );
+    }
+    return <CreateOrgScreen />;
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: "Inter, system-ui, sans-serif" }}>
@@ -226,7 +261,7 @@ function AppShell() {
       <ErrorBoundary key={activeTab}>
         {activeTab === "Invoices"        && <InvoiceList    getToken={getToken} />}
         {activeTab === "Vendors"         && <VendorScorecard getToken={getToken} />}
-        {activeTab === "Exceptions"      && <Exceptions      getToken={getToken} />}
+        {activeTab === "Exceptions" && <DocumentVault />}
         {activeTab === "ITC Summary"     && <ItcSummary      getToken={getToken} />}
         {activeTab === "Analytics"       && <Analytics       getToken={getToken} />}
         {activeTab === "Activity"        && <ActivityLog     getToken={getToken} />}

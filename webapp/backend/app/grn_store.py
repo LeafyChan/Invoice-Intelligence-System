@@ -1,10 +1,10 @@
-"""grn_store.py — DB operations for GRN (Session 17)"""
-
+"""grn_store.py — fixed ON CONFLICT target + get_processed_drive_ids only returns successful extractions"""
 from __future__ import annotations
 import json
 from uuid import uuid4
 from sqlalchemy import text
 from .db import get_org_scoped_db
+
 
 def upsert_grn(org_id: str, data: dict, drive_file_id: str = None, file_name: str = None) -> str:
     grn_id = str(uuid4())
@@ -27,7 +27,21 @@ def upsert_grn(org_id: str, data: dict, drive_file_id: str = None, file_name: st
                 :total_quantity_rejected, :total_quantity_accepted,
                 CAST(:line_items AS JSONB), CAST(:raw_data AS JSONB)
             )
-            ON CONFLICT DO NOTHING
+            ON CONFLICT (drive_file_id, org_id) DO UPDATE SET
+                grn_number = EXCLUDED.grn_number,
+                grn_date = EXCLUDED.grn_date,
+                po_number = EXCLUDED.po_number,
+                waybill_number = EXCLUDED.waybill_number,
+                vendor_name = EXCLUDED.vendor_name,
+                vendor_gstin = EXCLUDED.vendor_gstin,
+                received_by = EXCLUDED.received_by,
+                receipt_location = EXCLUDED.receipt_location,
+                total_quantity_ordered = EXCLUDED.total_quantity_ordered,
+                total_quantity_received = EXCLUDED.total_quantity_received,
+                total_quantity_rejected = EXCLUDED.total_quantity_rejected,
+                total_quantity_accepted = EXCLUDED.total_quantity_accepted,
+                line_items = EXCLUDED.line_items,
+                raw_data = EXCLUDED.raw_data
         """), {
             "grn_id": grn_id, "org_id": org_id,
             "drive_file_id": drive_file_id, "file_name": file_name,
@@ -42,6 +56,7 @@ def upsert_grn(org_id: str, data: dict, drive_file_id: str = None, file_name: st
         })
     return grn_id
 
+
 def list_grns(org_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
     with get_org_scoped_db(org_id) as db:
         rows = db.execute(text("""
@@ -55,6 +70,7 @@ def list_grns(org_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
         """), {"limit": limit, "offset": offset}).fetchall()
     return [dict(r._mapping) for r in rows]
 
+
 def get_grn(org_id: str, grn_id: str) -> dict | None:
     with get_org_scoped_db(org_id) as db:
         row = db.execute(text("""
@@ -62,15 +78,28 @@ def get_grn(org_id: str, grn_id: str) -> dict | None:
         """), {"grn_id": grn_id}).fetchone()
     return dict(row._mapping) if row else None
 
+
 def get_processed_drive_ids(db, org_id: str) -> set:
-    """Returns set of drive_file_ids already saved for this org."""
+    """
+    Only returns drive_file_ids where grn_number is not null
+    (proof the LLM extracted a real GRN, not a failed/partial row).
+    Failed rows are excluded so sync retries them on the next run.
+    """
     rows = db.execute(
-        text("SELECT drive_file_id FROM grn WHERE org_id = CAST(:oid AS uuid) AND drive_file_id IS NOT NULL"),
+        text("""
+            SELECT drive_file_id FROM grn
+            WHERE org_id = CAST(:oid AS uuid)
+              AND drive_file_id IS NOT NULL
+              AND grn_number IS NOT NULL
+        """),
         {"oid": org_id}
     ).fetchall()
     return {r[0] for r in rows}
 
 
 def save_grn_row(db, org_id: str, row: dict, drive_file_id: str = None, file_name: str = None) -> str:
-    """Thin wrapper for supply_chain_drive_sync."""
-    return upsert_grn(org_id, row, drive_file_id=drive_file_id or row.get("drive_file_id"), file_name=file_name or row.get("file_name"))
+    return upsert_grn(
+        org_id, row,
+        drive_file_id=drive_file_id or row.get("drive_file_id"),
+        file_name=file_name or row.get("file_name")
+    )

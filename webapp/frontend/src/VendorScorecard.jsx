@@ -6,7 +6,7 @@
  */
 import { useState, useEffect, useCallback } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";
 
 const GRADE_META = {
   A: { bg: "#DCFCE7", color: "#15803D", label: "Preferred"           },

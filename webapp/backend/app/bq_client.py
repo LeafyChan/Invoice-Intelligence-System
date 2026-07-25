@@ -124,7 +124,15 @@ def stream_line_items(rows: list[dict]) -> None:
             for k, v in row.items():
                 if k not in field_names:
                     continue
-                clean[k] = v.isoformat() if hasattr(v, "isoformat") else v
+                # Bug 20 fix: UUID objects must be str before BQ accepts them.
+                # Bug 21 fix: org_id is included in _BQ_SCHEMA and must be str.
+                # isoformat() handles date/datetime; str() handles UUID and other types.
+                if v is None:
+                    clean[k] = None
+                elif hasattr(v, "isoformat"):
+                    clean[k] = v.isoformat()
+                else:
+                    clean[k] = str(v)
             buf.write(json.dumps(clean, default=str) + "\n")
         buf.seek(0)
 

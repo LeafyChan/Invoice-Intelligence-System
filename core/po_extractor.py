@@ -51,6 +51,19 @@ GENERAL RULES:
 - delivery_date: keep as the exact text printed (e.g. "17-Jun-2026" or
   "within 2 weeks of order") — do not normalize this one, since POs often
   state delivery as a relative timeframe rather than a hard date.
+- incoterm_raw: copy the EXACT delivery/shipment term as printed on the PO,
+  even if it is not a standard code (e.g. "Ex-Warehouse Hyderabad",
+  "Franco Destination", "Door Delivery"). Never null if any delivery term exists.
+- incoterm: the closest matching Incoterms 2020 code from this list —
+  EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR, CIF.
+  Indian domestic equivalents map as follows:
+    "Ex-Works" / "Ex-Factory" / "Ex-Warehouse" → EXW
+    "Door Delivery" / "Franco" / "Delivered" → DDP
+    "C&F" / "CNF" → CFR
+    "CIF" → CIF
+    "FOB" → FOB
+  If no standard Incoterms 2020 code matches, use "DOMESTIC".
+  Null only if NO delivery/shipment term appears anywhere on the PO.
 - Tax handling: same normalization as invoices — CGST+SGST for intra-state,
   IGST for inter-state, combined "GST"/"Tax" line goes into
   total_gst_amount with cgst/sgst/igst left null. Do not guess a 50/50

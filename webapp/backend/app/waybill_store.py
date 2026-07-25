@@ -1,4 +1,4 @@
-"""waybill_store.py — DB operations for waybills (Session 17)"""
+"""waybill_store.py — fixed get_processed_drive_ids to only skip successfully extracted files"""
 from __future__ import annotations
 import json
 from uuid import uuid4
@@ -7,7 +7,6 @@ from .db import get_org_scoped_db
 
 
 def upsert_waybill(org_id: str, data: dict, drive_file_id: str = None, file_name: str = None) -> str:
-    """Insert or update waybill by ewb_number. Returns waybill_id."""
     waybill_id = str(uuid4())
     raw_data = json.dumps({k: v for k, v in data.items() if not k.startswith("_")})
 
@@ -118,15 +117,28 @@ def get_waybill(org_id: str, waybill_id: str) -> dict | None:
         """), {"waybill_id": waybill_id}).fetchone()
     return dict(row._mapping) if row else None
 
+
 def get_processed_drive_ids(db, org_id: str) -> set:
-    """Returns set of drive_file_ids already saved for this org — used by sync to skip duplicates."""
+    """
+    Returns drive_file_ids where extraction actually produced a usable waybill row
+    (ewb_number is not null = the LLM returned a real document, not garbage).
+    Files with null ewb_number were failed/partial extractions and must be retried.
+    """
     rows = db.execute(
-        text("SELECT drive_file_id FROM waybills WHERE org_id = CAST(:oid AS uuid) AND drive_file_id IS NOT NULL"),
+        text("""
+            SELECT drive_file_id FROM waybills
+            WHERE org_id = CAST(:oid AS uuid)
+              AND drive_file_id IS NOT NULL
+              AND ewb_number IS NOT NULL
+        """),
         {"oid": org_id}
     ).fetchall()
     return {r[0] for r in rows}
 
 
 def save_waybill_row(db, org_id: str, row: dict, drive_file_id: str = None, file_name: str = None) -> str:
-    """Thin wrapper so supply_chain_drive_sync can call a consistent save_fn signature."""
-    return upsert_waybill(org_id, row, drive_file_id=drive_file_id or row.get("drive_file_id"), file_name=file_name or row.get("file_name"))
+    return upsert_waybill(
+        org_id, row,
+        drive_file_id=drive_file_id or row.get("drive_file_id"),
+        file_name=file_name or row.get("file_name")
+    )

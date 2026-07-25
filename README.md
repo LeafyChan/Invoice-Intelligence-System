@@ -1,7 +1,7 @@
 # Invoice Intelligence System
-### Hackathon Submission — July 2026
+### Hackathon Submission - July 2026
 
-> **AI-powered supply chain document intelligence for Indian SMEs — from raw PDFs to real-time ITC risk scores, vendor grades, and cross-document exception flags.**
+> **AI-powered supply chain document intelligence for Indian SMEs - from raw PDFs to real-time ITC risk scores, vendor grades, and cross-document exception flags.**
 
 Built in 8 days: June 29 – July 6, 2026.
 
@@ -9,16 +9,16 @@ Built in 8 days: June 29 – July 6, 2026.
 
 ## The Problem
 
-Small and mid-sized businesses in India deal with a paperwork-heavy, error-prone supply chain. A single purchase results in five documents: a Purchase Order, an Invoice, an E-Waybill, a Goods Receipt Note (GRN), and sometimes a Material Return Note. These documents arrive as PDFs across email, WhatsApp, and Google Drive — and no one is cross-checking them.
+Small and mid-sized businesses in India deal with a paperwork-heavy, error-prone supply chain. A single purchase results in five documents: a Purchase Order, an Invoice, an E-Waybill, a Goods Receipt Note (GRN), and sometimes a Material Return Note. These documents arrive as PDFs across email, WhatsApp, and Google Drive - and no one is cross-checking them.
 
 The consequences are real:
 
 - **Missed ITC (Input Tax Credit):** Businesses lose GST credits because invoices don't match GSTR-2B filings or contain field errors. India's GST Council estimates billions in annual ITC leakage annually.
 - **Vendor disputes:** Quantity shortfalls, transport mode violations, and early-expiry e-waybills go unnoticed until it's too late.
-- **Manual reconciliation:** Finance teams spend hours every week matching invoices to POs by hand — a task that should take seconds.
+- **Manual reconciliation:** Finance teams spend hours every week matching invoices to POs by hand - a task that should take seconds.
 - **No visibility:** There's no single place to see whether a PO has a matching invoice, whether goods arrived, or whether anything was returned.
 
-**Who is this for?** Any Indian business with a procurement function — a manufacturing SME, a trading company, a distributor. The specific user is a Finance Manager or Accounts Payable team that processes 50–500 invoices per month and currently does reconciliation in spreadsheets.
+**Who is this for?** Any Indian business with a procurement function - a manufacturing SME, a trading company, a distributor. The specific user is a Finance Manager or Accounts Payable team that processes 50–500 invoices per month and currently does reconciliation in spreadsheets.
 
 ---
 
@@ -60,7 +60,7 @@ Google Drive (PDFs)
 
 ## The Data Pipeline
 
-### 1. Ingestion — Google Drive + OCR
+### 1. Ingestion - Google Drive + OCR
 
 Documents are stored in six typed Google Drive folders (invoices, purchase orders, GSTR-2B, waybills, GRN, material returns). A sync job polls each folder, downloads new PDFs, and runs them through a text extraction pipeline:
 
@@ -68,7 +68,7 @@ Documents are stored in six typed Google Drive folders (invoices, purchase order
 - Blank / image-only pages are detected early (< 50 chars threshold) and skipped to avoid wasting LLM tokens
 - Long documents are sampled (head + tail) to stay within context limits
 
-### 2. Extraction — LLM Structured Output
+### 2. Extraction - LLM Structured Output
 
 Each document type has a JSON Schema (`invoice_schema.json`, `po_schema.json`, `waybill_schema.json`, etc.). The extracted text is sent to **Groq (Llama 3.3 70B)** with the schema as a strict output format. If Groq fails or returns empty output, the pipeline falls back to **Google Gemini**.
 
@@ -82,7 +82,7 @@ Fields extracted per document type:
 | GRN | received quantities, rejection count, receipt date |
 | Material Return | return quantities, reason, linked PO/GRN |
 
-### 3. Storage — PostgreSQL with Row-Level Security
+### 3. Storage - PostgreSQL with Row-Level Security
 
 All structured data lands in Supabase (PostgreSQL). The schema is fully multi-tenant: every table carries `org_id` and is protected by row-level security policies. Key tables:
 
@@ -90,12 +90,12 @@ All structured data lands in Supabase (PostgreSQL). The schema is fully multi-te
 
 Cross-document links are maintained via `po_number` (Invoice ↔ PO ↔ GRN ↔ MR) and `invoice_number` (Invoice ↔ Waybill).
 
-### 4. Analytics — BigQuery + NVIDIA cuDF/RAPIDS
+### 4. Analytics - BigQuery + NVIDIA cuDF/RAPIDS
 
 After every sync, structured data streams into **BigQuery** for analytical queries. Two analytical views:
 
-- `itc_summary_bigquery.sql` — aggregates eligible vs ineligible ITC per period, applying GST Rule 42/43 apportionment
-- `vendor_score_bigquery.sql` — computes weighted vendor grades across the full document history
+- `itc_summary_bigquery.sql` - aggregates eligible vs ineligible ITC per period, applying GST Rule 42/43 apportionment
+- `vendor_score_bigquery.sql` - computes weighted vendor grades across the full document history
 
 For scale testing, **cudf.pandas** (NVIDIA RAPIDS) replaces the standard pandas layer. Benchmarks showed **6.8× speedup at 2M rows** for the reconciliation and scoring computations. This matters because an SME processing invoices for 3–5 years accumulates this data volume quickly, and the reconciliation engine runs on every sync.
 
@@ -107,7 +107,7 @@ import pandas as pd   # now GPU-accelerated transparently
 
 The drop-in replacement required zero changes to existing analytics code.
 
-### 5. Reconciliation Engine — 9 Cross-Document Checks
+### 5. Reconciliation Engine - 9 Cross-Document Checks
 
 `POST /supply-chain/reconcile` runs nine checks across the full document chain and writes flagged anomalies to the `exceptions` table:
 
@@ -139,25 +139,25 @@ Critical overrides: high rejection rate in last 90 days caps score at C; two or 
 
 ---
 
-## Training Data — Custom Synthetic B2B Document Generator
+## Training Data - Custom Synthetic B2B Document Generator
 
 → **[github.com/LeafyChan/Synthetic_B2B_Invoice_generator](https://github.com/LeafyChan/Synthetic_B2B_Invoice_generator)**
 
-One of the first problems encountered was the complete absence of any public labelled dataset for Indian B2B documents. Real invoices contain sensitive GSTIN, PAN, and financial data that can't be shared. Rather than skip evaluation entirely, a fully custom synthetic document generator was built from scratch alongside the main system — during the same 8-day window.
+One of the first problems encountered was the complete absence of any public labelled dataset for Indian B2B documents. Real invoices contain sensitive GSTIN, PAN, and financial data that can't be shared. Rather than skip evaluation entirely, a fully custom synthetic document generator was built from scratch alongside the main system - during the same 8-day window.
 
 ### What it generates
 
-The generator produces complete, linked five-document transaction sets — the same document chain the main system processes:
+The generator produces complete, linked five-document transaction sets - the same document chain the main system processes:
 
 | Document | File prefix | Links to |
 |----------|-------------|---------|
-| Purchase Order | `po_NNNNNN` | — |
+| Purchase Order | `po_NNNNNN` | - |
 | Tax Invoice | `inv_NNNNNN` | PO number |
 | E-Way Bill | `ewb_NNNNNN` | Invoice number |
 | Goods Receipt Note | `grn_NNNNNN` | PO + Invoice |
 | Material Return Note | `mrn_NNNNNN` | GRN (only when rejections exist) |
 
-All five documents in a transaction set share the same `doc_index` for exact ground-truth cross-document linking. The MRN is conditional — it only appears when the GRN records a rejection, mirroring real procurement behaviour.
+All five documents in a transaction set share the same `doc_index` for exact ground-truth cross-document linking. The MRN is conditional - it only appears when the GRN records a rejection, mirroring real procurement behaviour.
 
 ### GST-accurate field generation
 
@@ -176,7 +176,7 @@ The generator injects controlled discrepancies to teach the extraction and recon
 - **Transport mode discrepancy** (PO vs E-Way Bill) at ~1.5%, logged to SQLite as `transport_discrepancy = 1` and rendered as a visible warning banner on the EWB.
 - **GRN quantity shorts and overages**, rejection rates, and conditional MRN generation all mirror the exact cross-document flags the reconciliation engine detects in production.
 
-### Document realism — layout variation + degradation
+### Document realism - layout variation + degradation
 
 To prevent models from learning layout shortcuts:
 
@@ -189,16 +189,16 @@ To prevent models from learning layout shortcuts:
 | `degraded` | worn laser, inkjet, archive scan | Visible noise, light stains, mild crumple, slight rotation |
 | `heavy` | fax quality, tea-stained, crumpled, dying cartridge | Heavy stains, warp, resolution loss, rotation ±2.5° |
 
-PDFs are degraded by rasterising each page, applying the OpenCV pipeline, then rebuilding the PDF — so the model trains on degraded PDFs, not just degraded images.
+PDFs are degraded by rasterising each page, applying the OpenCV pipeline, then rebuilding the PDF - so the model trains on degraded PDFs, not just degraded images.
 
 ### Architecture
 
 ```
-Pass 1 — bootstrap.py (once per industry)
+Pass 1 - bootstrap.py (once per industry)
   LLM → product descriptions
   → TF-IDF HSN lookup → industry_catalog.json (~1,000 items with real codes + rates)
 
-Pass 2 — assembler.py (parallel workers)
+Pass 2 - assembler.py (parallel workers)
   For each doc_index:
     data_models.py         → PO + Invoice dataclasses, discrepancy injection
     supporting_docs.py     → adapt PO/Invoice → GRN/MRN/Waybill
@@ -225,20 +225,20 @@ Real documents      → human verification     → training_exports table → ev
 
 The frontend is a React SPA (Vite + Tailwind) authenticated with Clerk.
 
-**Invoice List** — The primary view. Each row shows full supply-chain health at a glance:
+**Invoice List** - The primary view. Each row shows full supply-chain health at a glance:
 - Linked document indicators for PO, Waybill, GRN, and Material Return (✅ / ⚠️ / ➖)
 - Computed pay-by date from payment terms (Net 30, days from GRN, COD, EOM, explicit due dates)
 - HSN eligibility badge with chapter/heading-level match detail
 - Confidence score from LLM extraction
 - Rescan button for any linked document type
 
-**ITC Summary** — Eligible credit per period, Rule 42/43 apportionment for mixed-use businesses, ineligible line items flagged.
+**ITC Summary** - Eligible credit per period, Rule 42/43 apportionment for mixed-use businesses, ineligible line items flagged.
 
-**Vendor Scorecard** — A–F grades with drill-down into contributing factors and override flags.
+**Vendor Scorecard** - A–F grades with drill-down into contributing factors and override flags.
 
-**Exceptions Queue** — Auto-detected anomalies with severity, linked documents, and one-click resolution.
+**Exceptions Queue** - Auto-detected anomalies with severity, linked documents, and one-click resolution.
 
-**Analytics** — ITC trend over time, vendor reliability charts, powered by BigQuery queries.
+**Analytics** - ITC trend over time, vendor reliability charts, powered by BigQuery queries.
 
 ---
 
@@ -270,7 +270,7 @@ The reconciliation and vendor scoring pipelines process all line items, GRN reco
 ### Google BigQuery
 
 - Live streaming insert on every sync keeps analytics current without ETL lag
-- ITC aggregation (`itc_summary_bigquery.sql`) and vendor scoring (`vendor_score_bigquery.sql`) run across the full historical dataset at the DB layer — no rows pulled to the application server
+- ITC aggregation (`itc_summary_bigquery.sql`) and vendor scoring (`vendor_score_bigquery.sql`) run across the full historical dataset at the DB layer - no rows pulled to the application server
 - Scales to any invoice volume without schema changes
 
 ---
@@ -334,7 +334,7 @@ npm run dev
 ### GPU Acceleration (optional)
 ```bash
 pip install cudf-cu12  # requires CUDA 12, NVIDIA GPU
-# No code changes needed — cudf.pandas is a drop-in replacement
+# No code changes needed - cudf.pandas is a drop-in replacement
 ```
 
 ---
