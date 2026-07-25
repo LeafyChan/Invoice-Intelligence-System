@@ -1733,6 +1733,45 @@ def debug_token(authorization: str = Header(None)):
     return {"raw_header": authorization}
 
 
+# ── Document Vault ────────────────────────────────────────────────────────────
+
+@app.get("/vault/invoices")
+def vault_invoices(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context), limit: int = Query(default=200, ge=1, le=500)):
+    rows = db.execute(text("SELECT invoice_id, file_name, drive_file_id, invoice_number, invoice_date, vendor_name, vendor_gstin, po_number, total_amount, status, confidence, processed_at, is_paid, payment_due_date FROM invoices ORDER BY processed_at DESC NULLS LAST LIMIT :limit"), {"limit": limit}).mappings().all()
+    return {"count": len(rows), "items": [dict(r) for r in rows]}
+
+@app.get("/vault/purchase-orders")
+def vault_purchase_orders(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context), limit: int = Query(default=200, ge=1, le=500)):
+    rows = db.execute(text("SELECT po_id, file_name, drive_file_id, po_number, po_date, vendor_name, vendor_gstin, total_amount, status, confidence, processed_at FROM purchase_orders ORDER BY processed_at DESC NULLS LAST LIMIT :limit"), {"limit": limit}).mappings().all()
+    return {"count": len(rows), "items": [dict(r) for r in rows]}
+
+@app.get("/vault/waybills")
+def vault_waybills(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context), limit: int = Query(default=200, ge=1, le=500)):
+    rows = db.execute(text("SELECT waybill_id, file_name, drive_file_id, ewb_number, ewb_date, ewb_valid_until, document_number, supplier_name, supplier_gstin, recipient_name, recipient_gstin, consignment_value, transport_mode_label, vehicle_number, processed_at FROM waybills ORDER BY processed_at DESC NULLS LAST LIMIT :limit"), {"limit": limit}).mappings().all()
+    return {"count": len(rows), "items": [dict(r) for r in rows]}
+
+@app.get("/vault/grn")
+def vault_grn(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context), limit: int = Query(default=200, ge=1, le=500)):
+    rows = db.execute(text("SELECT grn_id, file_name, drive_file_id, grn_number, grn_date, po_number, waybill_number, vendor_name, vendor_gstin, total_quantity_ordered, total_quantity_received, rejection_rate_pct, processed_at FROM grn ORDER BY grn_date DESC NULLS LAST LIMIT :limit"), {"limit": limit}).mappings().all()
+    return {"count": len(rows), "items": [dict(r) for r in rows]}
+
+@app.get("/vault/material-returns")
+def vault_material_returns(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context), limit: int = Query(default=200, ge=1, le=500)):
+    rows = db.execute(text("SELECT mrn_id, file_name, drive_file_id, mrn_number, mrn_date, grn_number, po_number, vendor_name, vendor_gstin, return_reason, total_quantity_returned, processed_at FROM material_returns ORDER BY mrn_date DESC NULLS LAST LIMIT :limit"), {"limit": limit}).mappings().all()
+    return {"count": len(rows), "items": [dict(r) for r in rows]}
+
+@app.patch("/invoices/{invoice_id}/unmark-paid", status_code=200)
+def unmark_invoice_paid(invoice_id: str, ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
+    row = db.execute(text("SELECT invoice_id, file_name, is_paid FROM invoices WHERE invoice_id = :iid"), {"iid": invoice_id}).mappings().fetchone()
+    if not row:
+        raise HTTPException(404, "Invoice not found")
+    if not row["is_paid"]:
+        return {"invoice_id": invoice_id, "is_paid": False, "already_unpaid": True}
+    db.execute(text("UPDATE invoices SET is_paid = false, paid_at = NULL WHERE invoice_id = :iid"), {"iid": invoice_id})
+    db.commit()
+    return {"invoice_id": invoice_id, "is_paid": False}
+
+
 # ── Serve React frontend ──────────────────────────────────────────────────────
 
 app.mount("/assets", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static/assets")), name="assets")
@@ -1741,7 +1780,7 @@ app.mount("/assets", StaticFiles(directory=os.path.join(os.path.dirname(__file__
 async def serve_frontend(full_path: str):
     if full_path.startswith(("invoices", "itc", "org", "drive", "purchase", "gstr", "waybills",
                               "grn", "material", "vendors", "supply", "activity", "exceptions",
-                              "debug", "training", "analytics", "health", "me", "admin")):
+                              "debug", "training", "analytics", "health", "me", "admin", "vault")):
         raise HTTPException(status_code=404, detail="Not Found")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     file_path = os.path.join(static_dir, full_path)

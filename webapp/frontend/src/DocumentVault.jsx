@@ -18,75 +18,118 @@ const TYPES = [
     label: "Invoices",
     icon: "🧾",
     color: "#3B82F6",
-    endpoint: "/invoices?page_size=200",
-    listKey: "invoices",
+    endpoint: "/vault/invoices?limit=200",
+    listKey: "items",
     idField: "invoice_id",
     numField: "invoice_number",
     patchEndpoint: (id) => `/invoices/${id}`,
     patchBody: (fields) => JSON.stringify({ fields, line_items: [] }),
-    editFields: ["vendor_name","vendor_gstin","invoice_number","invoice_date","po_number","total_amount","payment_terms"],
+    editFields: [
+      "vendor_name",
+      "vendor_gstin",
+      "invoice_number",
+      "invoice_date",
+      "po_number",
+      "total_amount",
+      "payment_terms",
+    ],
   },
   {
     key: "purchase_orders",
     label: "Purchase Orders",
     icon: "📋",
     color: "#8B5CF6",
-    endpoint: "/purchase-orders?page_size=200",
-    listKey: "purchase_orders",
+    endpoint: "/vault/purchase-orders?limit=200",
+    listKey: "items",
     idField: "po_id",
     numField: "po_number",
     patchEndpoint: (id) => `/purchase-orders/${id}`,
     patchBody: (fields) => JSON.stringify(fields),
-    editFields: ["po_number","po_date","vendor_name","vendor_gstin","total_amount","incoterm","incoterm_raw","requested_transport_mode","delivery_date_requested"],
+    editFields: [
+      "po_number",
+      "po_date",
+      "vendor_name",
+      "vendor_gstin",
+      "total_amount",
+      "incoterm",
+      "incoterm_raw",
+      "requested_transport_mode",
+      "delivery_date_requested",
+    ],
   },
   {
     key: "waybills",
     label: "E-Waybills",
     icon: "🚛",
     color: "#F59E0B",
-    endpoint: "/waybills?limit=200",
-    listKey: null, // array returned directly
+    endpoint: "/vault/waybills?limit=200",
+    listKey: "items",
     idField: "waybill_id",
-    numField: "ewb_number",
+    numField: "document_number",
     patchEndpoint: (id) => `/waybills/${id}`,
     patchBody: (fields) => JSON.stringify(fields),
-    editFields: ["ewb_number","ewb_date","ewb_valid_until","document_number","transport_mode_label","vehicle_number","supplier_name","recipient_name"],
+    editFields: [
+      "ewb_number",
+      "ewb_date",
+      "ewb_valid_until",
+      "document_number",
+      "transport_mode_label",
+      "vehicle_number",
+      "supplier_name",
+      "recipient_name",
+    ],
   },
   {
     key: "grn",
     label: "GRN",
     icon: "📦",
     color: "#10B981",
-    endpoint: "/grn?limit=200",
-    listKey: null,
+    endpoint: "/vault/grn?limit=200",
+    listKey: "items",
     idField: "grn_id",
     numField: "grn_number",
     patchEndpoint: (id) => `/grn/${id}`,
     patchBody: (fields) => JSON.stringify(fields),
-    editFields: ["grn_number","grn_date","po_number","waybill_number","vendor_name","total_quantity_ordered","total_quantity_received"],
+    editFields: [
+      "grn_number",
+      "grn_date",
+      "po_number",
+      "waybill_number",
+      "vendor_name",
+      "total_quantity_ordered",
+      "total_quantity_received",
+    ],
   },
   {
     key: "material_returns",
     label: "Material Returns",
     icon: "↩️",
     color: "#EF4444",
-    endpoint: "/material-returns?limit=200",
-    listKey: null,
+    endpoint: "/vault/material-returns?limit=200",
+    listKey: "items",
     idField: "mrn_id",
     numField: "mrn_number",
     patchEndpoint: (id) => `/material-returns/${id}`,
     patchBody: (fields) => JSON.stringify(fields),
-    editFields: ["mrn_number","mrn_date","grn_number","po_number","vendor_name","return_reason","total_quantity_returned"],
+    editFields: [
+      "mrn_number",
+      "mrn_date",
+      "grn_number",
+      "po_number",
+      "vendor_name",
+      "return_reason",
+      "total_quantity_returned",
+    ],
   },
 ];
 
 // Which ref fields on each type should match against which other type's numField
 const LINK_MAP = {
-  invoices:        { po_number: "purchase_orders", invoice_number: "waybills" },
-  purchase_orders: { po_number: "invoices" },
-  waybills:        { document_number: "invoices" },
-  grn:             { po_number: "invoices", waybill_number: "waybills" },
-  material_returns:{ grn_number: "grn", po_number: "invoices" },
+  invoices:        { po_number: ["purchase_orders","po_number"], invoice_number: ["waybills","document_number"] },
+  purchase_orders: { po_number: ["invoices","po_number"] },
+  waybills:        { document_number: ["invoices","invoice_number"] },
+  grn:             { po_number: ["invoices","po_number"], waybill_number: ["waybills","document_number"] },
+  material_returns:{ grn_number: ["grn","grn_number"], po_number: ["invoices","po_number"] },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -106,12 +149,11 @@ function fmt(v) {
 function checkLinks(docType, vals, allDocs) {
   const links = LINK_MAP[docType] || {};
   const matches = [];
-  for (const [field, targetType] of Object.entries(links)) {
+  for (const [field, linkDef] of Object.entries(links)) {
+    const [targetType, targetField] = linkDef;
     const v = (vals[field] || "").trim();
     if (!v) continue;
-    const cfg = TYPES.find(t => t.key === targetType);
-    if (!cfg) continue;
-    const hit = (allDocs[targetType] || []).find(d => d[cfg.numField] === v);
+    const hit = (allDocs[targetType] || []).find(d => d[targetField] === v);
     if (hit) matches.push({ field: humanKey(field), targetType, value: v });
   }
   return matches;
@@ -262,10 +304,11 @@ function DocRow({ doc, typeCfg, allDocs, token, onRefresh }) {
   // Compute link status for badge
   const links = LINK_MAP[typeCfg.key] || {};
   const linkEntries = Object.entries(links);
-  const linkedCount = linkEntries.filter(([field, targetType]) => {
+  const linkedCount = linkEntries.filter(([field, linkDef]) => {
     const v = doc[field]; if (!v) return false;
-    const cfg = TYPES.find(t => t.key === targetType);
-    return (allDocs[targetType] || []).some(d => d[cfg.numField] === v);
+
+    const [targetType, targetField] = linkDef;
+    return (allDocs[targetType] || []).some(d => d[targetField] === v);
   }).length;
 
   const linkColor = linkedCount === linkEntries.length && linkEntries.length > 0
@@ -340,10 +383,11 @@ function DocRow({ doc, typeCfg, allDocs, token, onRefresh }) {
           </div>
 
           {/* Link status rows */}
-          {linkEntries.map(([field, targetType]) => {
+          {linkEntries.map(([field, linkDef]) => {
+            const [targetType, targetField] = linkDef;
             const v = doc[field];
-            const cfg = TYPES.find(t => t.key === targetType);
-            const hit = v && (allDocs[targetType] || []).find(d => d[cfg.numField] === v);
+
+            const hit = v && (allDocs[targetType] || []).find(d => d[targetField] === v);
             return (
               <div key={field} style={{
                 fontSize: 11, padding: "3px 8px", borderRadius: 4, marginBottom: 3,
@@ -389,10 +433,10 @@ function Folder({ typeCfg, allDocs, token, onRefresh }) {
   const links = LINK_MAP[typeCfg.key] || {};
   const linkCount = Object.keys(links).length;
   const fullyLinked = linkCount === 0 ? docs.length : docs.filter(doc =>
-    Object.entries(links).every(([field, targetType]) => {
+    Object.entries(links).every(([field, linkDef]) => {
       const v = doc[field]; if (!v) return false;
-      const cfg = TYPES.find(t => t.key === targetType);
-      return (allDocs[targetType] || []).some(d => d[cfg.numField] === v);
+      const [targetType, targetField] = linkDef;
+      return (allDocs[targetType] || []).some(d => d[targetField] === v);
     })
   ).length;
 
