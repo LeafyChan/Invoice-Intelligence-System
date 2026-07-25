@@ -907,6 +907,8 @@ def list_invoices(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     overdue_only: bool = Query(default=False),
+    date_from: Optional[str] = Query(default=None),
+    date_to:   Optional[str] = Query(default=None),
 ):
     col = sort_by if sort_by in _SORTABLE_COLUMNS else "processed_at"
     direction = "DESC" if sort_dir.strip().upper() == "DESC" else "ASC"
@@ -929,6 +931,10 @@ def list_invoices(
         # SQL catches explicit payment_due_date; Python post-processing catches payment_terms cases
         filters.append(
             "(i.is_paid = false AND i.payment_due_date IS NOT NULL AND i.payment_due_date < CURRENT_DATE)")
+    if date_from:
+        filters.append("i.invoice_date >= :date_from"); params["date_from"] = date_from
+    if date_to:
+        filters.append("i.invoice_date <= :date_to"); params["date_to"] = date_to
     where = "WHERE " + " AND ".join(filters)
     params["limit"] = page_size
     params["offset"] = (page - 1) * page_size
