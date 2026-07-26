@@ -1717,7 +1717,7 @@ def get_vendor_score(vendor_id: str, db: Session = Depends(get_db_for_request), 
 @app.post("/vendors/{vendor_id}/score/recalculate")
 def recalculate_vendor_score(vendor_id: str, db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context)):
     try:
-        return vendor_score_store.compute_and_save_vendor_score(db, ctx["org_id"], vendor_id)
+        return vendor_score_store.recalculate_and_store(ctx["org_id"], vendor_id)
     except Exception as e:
         raise HTTPException(500, f"Score calculation failed: {e}")
 
@@ -1793,3 +1793,20 @@ async def serve_frontend(full_path: str):
     if os.path.isfile(file_path):
         return FileResponse(file_path)
     return FileResponse(os.path.join(static_dir, "index.html"))
+
+@app.post("/vendors/scorecard/recalculate-all")
+def recalculate_all_vendor_scores(
+    ctx: dict = Depends(get_request_context),
+    db: Session = Depends(get_db_for_request),
+):
+    vendor_ids = db.execute(
+        text("SELECT vendor_id FROM vendors WHERE org_id = CAST(:oid AS uuid)"),
+        {"oid": ctx["org_id"]}).fetchall()
+    results = []
+    for (vid,) in vendor_ids:
+        try:
+            r = vendor_score_store.recalculate_and_store(ctx["org_id"], str(vid))
+            results.append({"vendor_id": str(vid), "ok": True, "grade": r.get("grade")})
+        except Exception as e:
+            results.append({"vendor_id": str(vid), "ok": False, "error": str(e)})
+    return {"recalculated": len(results), "results": results}
