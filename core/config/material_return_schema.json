@@ -1,5 +1,17 @@
 {
   "document_type_label": "Material Return Note (MRN)",
+  "extraction_hints": {
+    "mrn_number": "Look for: MRN No, Return No, Return Reference, Material Return No, MR No, RMA No",
+    "mrn_date": "Look for: Return Date, MRN Date, Date of Return, Issue Date on MRN",
+    "grn_number": "Look for: GRN No, Goods Receipt No, Receipt Reference, Against GRN",
+    "po_number": "Look for: PO No, Purchase Order No, Order Reference, Against PO",
+    "vendor_name": "The supplier/vendor being returned to",
+    "vendor_gstin": "15-character GST number of vendor, format: 2digits+10alphanum+1digit+1Z+1alphanum",
+    "return_reason": "Must be one of the valid reasons. Map partial matches.",
+    "return_initiated_by": "Person or department initiating the return",
+    "total_quantity_returned": "IMPORTANT: Sum of all line item quantities returned. Look for: Total Qty, Total Units Returned, Grand Total Qty. If not explicitly stated, sum all line item quantity_returned values.",
+    "line_items": "Each returned item. quantity_returned is the number of units being sent back."
+  },
   "required_fields": [
     "mrn_number", "mrn_date",
     "grn_number", "po_number",

@@ -42,7 +42,7 @@ from PIL import Image
 DEMO_MODE = os.environ.get("INVOICE_OCR_DEMO_MODE", "1") == "1"
 
 GEMINI_MODEL_NAME = "gemini-2.5-flash-lite"
-GROQ_MODEL_NAME   = "openai/gpt-oss-120b"
+GROQ_MODEL_NAME   = "llama-3.3-70b-versatile"
 
 MIN_SECONDS_BETWEEN_CALLS = {
     "gemini": 4.5,

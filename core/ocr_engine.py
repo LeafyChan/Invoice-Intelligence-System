@@ -6,14 +6,14 @@ and only escalates when it has to.
 
 TIER 1  - Digital text PDFs (typed/native).        Method: pdfplumber
 TIER 2  - Scanned but printed text.                 Method: render page -> image -> Tesseract
-TIER 3  - Handwritten / poor scan / low confidence. Method: render page -> image -> flag for Vision AI
+TIER 3  - Handwritten / poor scan / low confidence. Method: Document AI (GCS)
+                                                     Fallback: flag for Vision AI
 
 Every page returns a PageResult with:
   - raw_text          (best text we could get, may be empty)
-  - method_used        ("digital_text" | "ocr_printed" | "needs_vision_ai")
-  - confidence          (0-100, our best estimate of how trustworthy raw_text is)
-  - image (PIL.Image)   (only populated when we had to rasterize the page -
-                          this is what gets sent to Gemini Vision for handwriting/messy formats)
+  - method_used       ("digital_text" | "ocr_printed" | "document_ai" | "needs_vision_ai")
+  - confidence        (0-100, our best estimate of how trustworthy raw_text is)
+  - image (PIL.Image) (only populated when we had to rasterize the page)
 """
 
 import io
@@ -27,14 +27,12 @@ import pytesseract
 from PIL import Image
 
 # Below this, we don't trust pdfplumber's text even if it found some
-# (covers PDFs with a tiny bit of embedded text/metadata but mostly an image)
 MIN_DIGITAL_CHARS = 25
 
-# Tesseract word-confidence below this -> treat the page as likely handwritten
-# or too degraded for OCR, and escalate to Vision AI instead of trusting OCR text.
+# Tesseract word-confidence below this -> escalate to Document AI
 TESSERACT_TRUST_THRESHOLD = 65
 
-# Render scale for rasterizing PDF pages to images (higher = better OCR, slower)
+# Render scale for rasterizing PDF pages to images
 RENDER_DPI = 300
 
 
@@ -58,10 +56,7 @@ def _pdf_page_to_image(page: "fitz.Page") -> Image.Image:
 def _run_tesseract_with_confidence(image: Image.Image) -> tuple[str, float]:
     """
     Returns (text, mean_word_confidence 0-100).
-    Reconstructs line breaks from Tesseract's block/paragraph/line numbers
-    instead of flattening everything into one long string - this matters
-    both for the field-position regex parser used in demo mode and for
-    giving Gemini better layout context in production.
+    Reconstructs line breaks from Tesseract's block/paragraph/line numbers.
     """
     data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
     n = len(data["text"])
@@ -108,7 +103,7 @@ def read_pdf(pdf_path: str) -> list[PageResult]:
                 ))
                 continue
 
-            # No reliable digital text -> rasterize the page and look closer
+            # No reliable digital text -> rasterize and look closer
             fitz_page = fitz_doc[i]
             page_image = _pdf_page_to_image(fitz_page)
             ocr_text, ocr_conf = _run_tesseract_with_confidence(page_image)
@@ -125,22 +120,38 @@ def read_pdf(pdf_path: str) -> list[PageResult]:
                 ))
                 continue
 
-            # --- TIER 3: low-confidence OCR -> likely handwritten, stamped,
-            # rotated, low-quality scan, or a non-standard layout. Don't trust
-            # Tesseract's text as ground truth; hand the image to Vision AI
-            # instead and flag the page so a human can be looped in if needed.
-            results.append(PageResult(
-                page_number=i + 1,
-                raw_text=ocr_text,  # kept only as a weak hint, not relied upon
-                method_used="needs_vision_ai",
-                confidence=ocr_conf,
-                image=page_image,
-                notes=[
-                    f"Tesseract confidence too low ({ocr_conf:.1f}) or too little text "
-                    f"recognized — likely handwritten, stamped, rotated, or a poor scan. "
-                    f"Routed to Vision AI extraction and flagged for review."
-                ],
-            ))
+            # --- TIER 3: low-confidence OCR -> try Document AI first,
+            # fall back to needs_vision_ai if DocAI isn't configured or fails.
+            docai_text = None
+            try:
+                from core.gcs_ocr import upload_to_gcs, ocr_with_documentai
+                gcs_uri = upload_to_gcs(pdf_path, "invoices")
+                docai_text = ocr_with_documentai(gcs_uri)
+            except Exception:
+                pass  # not configured or failed — fall through to needs_vision_ai
+
+            if docai_text and len(docai_text.strip()) >= MIN_DIGITAL_CHARS:
+                results.append(PageResult(
+                    page_number=i + 1,
+                    raw_text=docai_text,
+                    method_used="document_ai",
+                    confidence=90.0,
+                    image=page_image,
+                    notes=[f"Document AI OCR used (Tesseract confidence was {ocr_conf:.1f})."],
+                ))
+            else:
+                results.append(PageResult(
+                    page_number=i + 1,
+                    raw_text=ocr_text,
+                    method_used="needs_vision_ai",
+                    confidence=ocr_conf,
+                    image=page_image,
+                    notes=[
+                        f"Tesseract confidence too low ({ocr_conf:.1f}) or too little text "
+                        f"recognized — likely handwritten, stamped, rotated, or a poor scan. "
+                        f"Routed to Vision AI extraction and flagged for review."
+                    ],
+                ))
 
         fitz_doc.close()
 

@@ -18,8 +18,26 @@ SCHEMA = json.loads(SCHEMA_PATH.read_text())
 VALID_REASONS = {"Defective", "Wrong Item", "Excess Quantity", "Damaged in Transit", "Quality Rejection"}
 
 SYSTEM_PROMPT = """You are an expert at extracting structured data from Material Return Notes (MRN).
-Extract all fields exactly. For return_reason, map to one of: Defective / Wrong Item / Excess Quantity / Damaged in Transit / Quality Rejection.
-Dates in YYYY-MM-DD. photos_attached should be boolean. Return ONLY valid JSON — no markdown."""
+These documents may have varying layouts — some are formal printed forms, some are handwritten,
+some are stamped copies, some are scanned PDFs with tables.
+
+CRITICAL FIELDS — always extract these:
+- mrn_number: The MRN/Return reference number (MRN No, Return No, RMA No, MR No)
+- mrn_date: Date in YYYY-MM-DD format
+- grn_number: The GRN being returned against (GRN No, Receipt No, Against GRN)
+- po_number: Original purchase order number (PO No, Order No, Against PO)
+- vendor_name: Name of the vendor/supplier the goods are being returned to
+- vendor_gstin: 15-character GSTIN of vendor
+- return_reason: Map to exactly one of: Defective / Wrong Item / Excess Quantity / Damaged in Transit / Quality Rejection
+- return_initiated_by: Name or department initiating the return
+- total_quantity_returned: THE TOTAL NUMBER OF UNITS BEING RETURNED. Look for Total Qty,
+  Total Units, Grand Total. If not found as a standalone field, ADD UP all line item quantities.
+- line_items: Array of returned items, each with quantity_returned as a number
+
+For return_reason, map partial/variant text: "damaged" → "Damaged in Transit",
+"quality issue" → "Quality Rejection", "incorrect" → "Wrong Item", etc.
+Dates must be YYYY-MM-DD. photos_attached is boolean.
+Return ONLY valid JSON — no markdown, no explanation."""
 
 def extract_material_return(file_path: str, org_id: str) -> dict:
     raw_text = _run_ocr(file_path)

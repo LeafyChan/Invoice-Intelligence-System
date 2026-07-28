@@ -395,7 +395,7 @@ function DocRow({ doc, typeCfg, allDocs, token, onRefresh }) {
                 color:      hit ? "#065F46"  : v ? "#991B1B" : "#9CA3AF",
               }}>
                 {humanKey(field)}{v ? ` = ${v}` : " (empty)"} →{" "}
-                {cfg.label}: {hit ? "✓ matched" : v ? "✗ no match in scanned docs" : "—"}
+                {typeCfg.label}: {hit ? "✓ matched" : v ? "✗ no match in scanned docs" : "—"}
               </div>
             );
           })}
