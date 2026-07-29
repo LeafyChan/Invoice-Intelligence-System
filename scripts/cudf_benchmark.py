@@ -210,7 +210,7 @@ def run(n_rows: int):
         rmm.reinitialize(
             pool_allocator=True,
             initial_pool_size=512  * 1024 * 1024,      # 512 MB start
-            maximum_pool_size=3    * 1024 * 1024 * 1024, # 3 GB max
+            maximum_pool_size=5    * 1024 * 1024 * 1024, # 3 GB max
         )
         import cudf.pandas
         cudf.pandas.install()

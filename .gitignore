@@ -1,19 +1,29 @@
+# secrets & keys
 gdrive_key.json
-venv/
-**/__pycache__/
-*.pyc
-**/node_modules/
-.claude/settings.local.json
+bq_service_account.json
 .env
 .env.local
 .env*.local
-/output/
-bq_service_account.json
-Log.md
-test_data/
-output/
+cloudrun.env
 start_app.sh
+
+# python
+venv/
+**/__pycache__/
+*.pyc
+
+# node
+**/node_modules/
 **/dist/
-.env.local
-Deployment.md
+
+# output / test
+/output/
+output/
+test_data/
+Log.md
+
+# editor
+.claude/settings.local.json
 Learning.md
+Deployment.md
+dev.sh

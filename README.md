@@ -3,7 +3,7 @@
 
 > **AI-powered supply chain document intelligence for Indian SMEs — from raw PDFs to real-time ITC risk scores, vendor grades, cross-document exception flags, and a searchable Document Vault.**
 
-Built in 8 days: June 29 – July 6, 2026. Extended with Phase 2 refinements: July 21–26, 2026.
+Built in 8 days: June 29 – July 6, 2026. Extended with Phase 2 refinements: July 21–26, 2026. Deployed to GCP Cloud Run: July 29, 2026.
 
 ---
 
@@ -54,7 +54,7 @@ Google Drive (PDFs)
    ├── Document Vault (file-first explorer across all doc types)
    ├── ITC Summary (Rule 42/43 compliance)
    ├── Vendor Scorecard (A–F grading)
-   └── Analytics (ITC trend, vendor reliability)
+   └── Analytics (ITC trend, vendor reliability — powered by BigQuery)
 ```
 
 ---
@@ -76,7 +76,7 @@ Each document type has a JSON Schema (`invoice_schema.json`, `po_schema.json`, `
 Fields extracted per document type:
 
 | Document | Key Fields |
-|----------|-----------|
+|----------|-----------| 
 | Invoice | vendor/buyer GSTIN, invoice number, date, line items with HSN codes, tax amounts, payment terms |
 | Purchase Order | PO number, line items, Incoterms 2020 (all 11 codes), payment terms, advance %, delivery address |
 | E-Waybill | EWB number, validity date, consignment value, transport mode, place of dispatch/delivery, document_number (invoice reference) |
@@ -98,7 +98,7 @@ After every sync, structured data streams into **BigQuery** for analytical queri
 - `itc_summary_bigquery.sql` — aggregates eligible vs ineligible ITC per period, applying GST Rule 42/43 apportionment
 - `vendor_score_bigquery.sql` — computes weighted vendor grades across the full document history
 
-For scale testing, **cudf.pandas** (NVIDIA RAPIDS) replaces the standard pandas layer. Benchmarks showed **6.8× speedup at 2M rows** for the reconciliation and scoring computations. An SME processing invoices for 3–5 years accumulates this data volume quickly, and the reconciliation engine runs on every sync.
+For scale testing, **cudf.pandas** (NVIDIA RAPIDS) replaces the standard pandas layer. Benchmarks showed **11.3× speedup at 20M rows** for the reconciliation and scoring computations. An SME processing invoices for 3–5 years accumulates this data volume quickly, and the reconciliation engine runs on every sync.
 
 ```python
 import cudf.pandas
@@ -175,7 +175,7 @@ Eligible credit per period, Rule 42/43 apportionment for mixed-use businesses, i
 A–F grades with drill-down into contributing factors and override flags.
 
 ### Analytics
-ITC trend over time, vendor reliability charts, powered by BigQuery queries.
+ITC trend over time and vendor reliability table, powered by live BigQuery queries. Updates automatically on every Drive sync.
 
 ---
 
@@ -251,6 +251,7 @@ A 20,000-pair run (100,000 documents) completes with 4 parallel workers.
 | GPU acceleration | **NVIDIA cuDF / RAPIDS (cudf.pandas)** |
 | Backend | FastAPI (Python), SQLAlchemy |
 | Frontend | React, Vite, Clerk auth |
+| Deployment | **GCP Cloud Run** (asia-south1) |
 
 ---
 
@@ -260,9 +261,16 @@ A 20,000-pair run (100,000 documents) completes with 4 parallel workers.
 
 The reconciliation and vendor scoring pipelines process all line items, GRN records, and exception flags using pandas-style operations. Replacing `import pandas` with `cudf.pandas` (zero code changes) produced:
 
-- **6.8× speedup at 2M rows** in `cudf_benchmark.py`
+- **11.3× speedup at 20M rows** in `cudf_benchmark.py` (RTX 4050, CUDA 12)
+- Streaming scale: 1,000 orgs · 100M rows · 11.9s · ~14MB peak RAM
 - Enables full daily resync of multi-year invoice history in seconds rather than minutes
-- Reconciliation results that would require an overnight batch are available interactively after each Drive sync
+
+| Rows | pandas | cuDF | Speedup |
+|------|--------|------|---------|
+| 2M   | 0.188s | 0.098s | 1.9× |
+| 5M   | 0.493s | 0.144s | 3.4× |
+| 10M  | 1.099s | 0.129s | 8.5× |
+| 20M  | 2.352s | 0.208s | **11.3×** |
 
 ### Google BigQuery
 
@@ -282,7 +290,7 @@ The reconciliation and vendor scoring pipelines process all line items, GRN reco
 | Cross-document exception detection | Never | 9 check types, every sync |
 | Finding a specific invoice or PO | Ctrl+F on spreadsheet | 13-dimension search panel |
 | Debugging a failed extraction | Not possible | Document Vault shows every scanned row including partial failures |
-| Resync time for 2M row history | ~8 min (pandas) | ~70 sec (cuDF) |
+| Resync time for 20M row history | ~2.4s (pandas) | ~0.2s (cuDF) |
 
 ---
 
@@ -308,6 +316,7 @@ export BQ_PROJECT_ID="your-gcp-project"
 export BQ_DATASET="invoice_intel"
 export INVOICE_SCHEMA_PATH="/path/to/core/config/invoice_schema.json"
 export PO_SCHEMA_PATH="/path/to/core/config/po_schema.json"
+export CORE_PIPELINE_PATH="/path/to/personal_project"
 ```
 
 ### Database
@@ -318,20 +327,44 @@ Run migrations in order via Supabase SQL editor:
 4. `migration_add_supply_chain.sql`
 5. Phase 2 migrations (see Deployment Guide)
 
-### Backend
+### Local Backend
 ```bash
-pip install -r requirements.txt
+pip install -r webapp/backend/requirements.txt
+cd webapp/backend
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend
+### Local Frontend
 ```bash
 cd webapp/frontend
 npm install --legacy-peer-deps
 npm run dev
 ```
 
-### GPU Acceleration (optional)
+### Dev Shorthands
+```bash
+source ~/personal_project/dev.sh   # load once (or add to ~/.bashrc)
+
+start        # boot local backend + ngrok tunnel
+rebuild      # frontend rebuild + restart local app
+fdev         # Vite dev server with hot reload (localhost:3000)
+logs         # watch backend logs live
+fulldeploy   # frontend build → Docker build → Cloud Run deploy
+crlogs       # tail Cloud Run logs
+```
+
+### Cloud Run Deployment
+```bash
+cd ~/personal_project
+gcloud builds submit --config cloudbuild.yaml .
+gcloud run deploy invoice-intel \
+  --image asia-south1-docker.pkg.dev/apac-01072016/invoice-intel/invoice-intel:latest \
+  --platform managed --region asia-south1 --allow-unauthenticated \
+  --port 8080 --memory 2Gi --cpu 2 \
+  --set-env-vars "BQ_PROJECT_ID=...,..."
+```
+
+### GPU Acceleration (optional, local only)
 ```bash
 pip install cudf-cu12  # requires CUDA 12, NVIDIA GPU
 # No code changes needed - cudf.pandas is a drop-in replacement
@@ -355,12 +388,19 @@ invoice-intelligence/
 │   └── gstr2b_parser.py      # GSTR-2B matching
 ├── scripts/
 │   ├── bigquery_sync.py      # BQ live sync
-│   └── cudf_benchmark.py     # GPU acceleration benchmark
+│   ├── cudf_benchmark.py     # GPU benchmark (11.3× at 20M rows)
+│   └── multi_org_benchmark_final.py  # 1000-org streaming benchmark
 ├── sql/
 │   ├── itc_summary_bigquery.sql
 │   └── vendor_score_bigquery.sql
+├── Dockerfile                # Cloud Run image (requirements_cloudrun.txt)
+├── cloudbuild.yaml           # GCP Cloud Build config
+├── dev.sh                    # Dev shorthands (source to load)
 └── webapp/
-    ├── backend/app/          # FastAPI application (40+ endpoints)
+    ├── backend/
+    │   ├── requirements.txt           # Local venv (full, with GPU/CUDA)
+    │   ├── requirements_cloudrun.txt  # Cloud Run (no GPU packages)
+    │   └── app/              # FastAPI application (40+ endpoints)
     └── frontend/src/
         ├── InvoiceList.jsx   # Primary view with supply chain indicators
         ├── AdvancedSearch.jsx  # 13-dimension inline search panel
@@ -368,7 +408,7 @@ invoice-intelligence/
         ├── ReviewModal.jsx     # Multi-doc tabbed viewer
         ├── VendorScorecard.jsx
         ├── Itcsummary.jsx
-        └── Analytics.jsx
+        └── Analytics.jsx     # BigQuery ITC trend + vendor reliability
 
 Synthetic_B2B_Invoice_generator/  # companion repo
 ├── bootstrap.py              # LLM → industry catalog generation
@@ -403,11 +443,20 @@ A file-first view across all 5 document types. Every document that was scanned i
 
 ---
 
+## S24–S25 — Cloud Run Deployment (July 28–29, 2026)
+
+- Bug 20 fixed: BQ UUID serialization — `str()` all UUID fields before `insert_rows_json`; analytics charts now populate correctly
+- GPU card removed from Analytics tab — benchmarks run locally, not in the deployed app
+- Deployed to GCP Cloud Run: `https://invoice-intel-542954306088.asia-south1.run.app`
+- `requirements_cloudrun.txt` pinned to exact versions matching local venv (minus all GPU/CUDA packages)
+- `dev.sh` shorthand script added (`fulldeploy`, `crlogs`, `crrev`, `start`, `rebuild`, `fdev`, etc.)
+
+---
+
 ## What's Next
 
 - Mobile-responsive layout for on-the-go invoice approval
 - Custom OCR trained specifically on Indian handwritten business documents
-- GCP Cloud Run deployment for production use
 - GSTR-2B reconciliation end-to-end (data model supports it, reconciliation engine not yet wired)
-- Improve `material_return_extractor.py` to reliably extract return quantities
-- Fix BQ UUID serialization (Bug 20) to restore analytics charts
+- Improve `material_return_extractor.py` to reliably extract return quantities (Bug 52)
+- Fix Bug 21: `line_items_flat` BQ table missing `org_id` column

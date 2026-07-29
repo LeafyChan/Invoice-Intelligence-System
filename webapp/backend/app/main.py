@@ -7,6 +7,9 @@ import re
 import sys
 import tempfile
 import uuid
+import os
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv(), override=True)
 from pathlib import Path
 from typing import Optional
 

@@ -8,7 +8,8 @@ from sqlalchemy import text
 from .db import get_org_scoped_db
 
 # Import scorer from core pipeline
-sys.path.insert(0, str(Path(__file__).parents[4]))
+import os as _os
+sys.path.insert(0, _os.environ.get("CORE_PIPELINE_PATH", str(Path(__file__).parents[1])))
 from core.vendor_scorer import compute_vendor_score
 
 def recalculate_and_store(org_id: str, vendor_id: str) -> dict:

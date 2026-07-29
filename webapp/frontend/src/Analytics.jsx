@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 function formatINR(n) {
   return `₹${Number(n || 0).toLocaleString("en-IN", {
@@ -43,7 +43,6 @@ function LineChart({ data, valueKey = "claimable_itc", labelKey = "month", heigh
   const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
   const areaD = pathD + ` L${pts[pts.length - 1][0].toFixed(1)},${(pad.top + chartH).toFixed(1)} L${pad.left},${(pad.top + chartH).toFixed(1)} Z`;
 
-  // Y-axis ticks
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(t => ({
     y: pad.top + chartH - t * chartH,
     label: formatINR(min + t * range),
@@ -57,8 +56,6 @@ function LineChart({ data, valueKey = "claimable_itc", labelKey = "month", heigh
           <stop offset="100%" stopColor="#312E81" stopOpacity="0.01" />
         </linearGradient>
       </defs>
-
-      {/* Grid lines */}
       {yTicks.map((t, i) => (
         <g key={i}>
           <line x1={pad.left} y1={t.y} x2={W - pad.right} y2={t.y}
@@ -69,14 +66,8 @@ function LineChart({ data, valueKey = "claimable_itc", labelKey = "month", heigh
           </text>
         </g>
       ))}
-
-      {/* Area fill */}
       <path d={areaD} fill="url(#areaGrad)" />
-
-      {/* Line */}
       <path d={pathD} fill="none" stroke="#312E81" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-
-      {/* Data points + x-labels */}
       {pts.map((p, i) => (
         <g key={i}>
           <circle cx={p[0]} cy={p[1]} r="3.5" fill="#312E81" />
@@ -106,9 +97,10 @@ function BqNudge() {
         BigQuery not connected
       </div>
       <div style={{ fontSize: 12, color: "#6B7280", lineHeight: 1.7, maxWidth: 340, margin: "0 auto" }}>
-        Add <code style={{ background: "#E0E7FF", padding: "1px 5px", borderRadius: 3 }}>BQ_PROJECT_ID</code> and
-        {" "}<code style={{ background: "#E0E7FF", padding: "1px 5px", borderRadius: 3 }}>BQ_DATASET</code> to
-        your backend <code>.env</code>, then restart. BigQuery syncs automatically on every Drive sync.
+        Add <code style={{ background: "#E0E7FF", padding: "1px 5px", borderRadius: 3 }}>BQ_PROJECT_ID</code>,{" "}
+        <code style={{ background: "#E0E7FF", padding: "1px 5px", borderRadius: 3 }}>BQ_DATASET</code>, and{" "}
+        <code style={{ background: "#E0E7FF", padding: "1px 5px", borderRadius: 3 }}>GOOGLE_APPLICATION_CREDENTIALS</code>{" "}
+        to your backend <code>.env</code>, then restart. BigQuery syncs automatically on every Drive sync.
       </div>
     </div>
   );
@@ -159,7 +151,7 @@ export default function Analytics({ getToken }) {
       <div style={s.header}>
         <div>
           <h2 style={s.heading}>Analytics</h2>
-          <p style={s.sub}>BigQuery-powered — monthly ITC trends and vendor risk, fast at any scale.</p>
+          <p style={s.sub}>BigQuery-powered · monthly ITC trends and vendor risk at any scale.</p>
         </div>
         <button onClick={() => { fetchTrend(); fetchVendors(); }}
           disabled={trendLoading || vendorLoading} style={s.refreshBtn}>
@@ -175,7 +167,7 @@ export default function Analytics({ getToken }) {
           {/* ITC Trend */}
           <div style={s.card}>
             <div style={s.cardTitle}>Monthly ITC trend</div>
-            <div style={s.cardSub}>Claimable Input Tax Credit by month</div>
+            <div style={s.cardSub}>Claimable Input Tax Credit by month · powered by BigQuery</div>
             {trendLoading && <div style={s.loading}>Loading…</div>}
             {trendErr && <div style={s.err}>{trendErr}</div>}
             {!trendLoading && trend?.months?.length > 0 && (
@@ -200,7 +192,7 @@ export default function Analytics({ getToken }) {
           {/* Vendor reliability */}
           <div style={s.card}>
             <div style={s.cardTitle}>Vendor reliability</div>
-            <div style={s.cardSub}>Flag rate and ITC by vendor — sorted by highest risk first</div>
+            <div style={s.cardSub}>Flag rate and ITC by vendor — sorted by highest risk first · powered by BigQuery</div>
             {vendorLoading && <div style={s.loading}>Loading…</div>}
             {vendorErr && <div style={s.err}>{vendorErr}</div>}
             {!vendorLoading && vendors?.vendors?.length > 0 && (
@@ -267,7 +259,7 @@ const s = {
   },
   header: {
     display: "flex", justifyContent: "space-between", alignItems: "flex-start",
-    flexWrap: "wrap", gap: 16, marginBottom: 24,
+    flexWrap: "wrap", gap: 16, marginBottom: 20,
   },
   heading: { margin: "0 0 4px", fontSize: 18, fontWeight: 700, color: "#111318", letterSpacing: "-0.01em" },
   sub: { margin: 0, fontSize: 13, color: "#6B7280" },
@@ -287,9 +279,7 @@ const s = {
   err: { color: "#B91C1C", fontSize: 12, padding: "12px 0" },
   empty: { color: "#9CA3AF", fontSize: 12, padding: "32px 0", textAlign: "center" },
   trendStats: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 16 },
-  trendStat: {
-    background: "#F7F8FA", borderRadius: 8, padding: "10px 12px",
-  },
+  trendStat: { background: "#F7F8FA", borderRadius: 8, padding: "10px 12px" },
   trendStatLabel: { fontSize: 10, color: "#9CA3AF", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 },
   trendStatVal: { fontSize: 15, fontWeight: 700, color: "#312E81", marginBottom: 2 },
   trendStatMeta: { fontSize: 10, color: "#9CA3AF" },
