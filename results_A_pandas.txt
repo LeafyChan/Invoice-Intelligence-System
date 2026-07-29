@@ -1,0 +1,54 @@
+
+════════════════════════════════════════════════════════════════════════════════
+  Invoice Intelligence -- Multi-Org GPU Benchmark (3 strategies)
+  1,000 orgs  x  100,000 rows  =  100,000,000 total  |  RTX 4050
+════════════════════════════════════════════════════════════════════════════════
+
+  [A] pandas sequential...
+    pandas [ 100/1000]    1.28s  ETA  11.5s  10,000,000 rows done
+    pandas [ 200/1000]    2.58s  ETA  10.3s  20,000,000 rows done
+    pandas [ 300/1000]    3.68s  ETA   8.6s  30,000,000 rows done
+    pandas [ 400/1000]    4.75s  ETA   7.1s  40,000,000 rows done
+    pandas [ 500/1000]    5.81s  ETA   5.8s  50,000,000 rows done
+    pandas [ 600/1000]    6.83s  ETA   4.6s  60,000,000 rows done
+    pandas [ 700/1000]    7.97s  ETA   3.4s  70,000,000 rows done
+    pandas [ 800/1000]    9.19s  ETA   2.3s  80,000,000 rows done
+    pandas [ 900/1000]   10.55s  ETA   1.2s  90,000,000 rows done
+    pandas [1000/1000]   11.67s  ETA   0.0s  100,000,000 rows done
+
+————————————————————————————————————————————————————————————————————————————————
+  A) pandas sequential   |   wall-clock: 11.667s
+————————————————————————————————————————————————————————————————————————————————
+   OrgID  Industry             Rows             ITC Total
+       0  Manufacturing     100,000  Rs      1,438,657,570
+       1  Retail            100,000  Rs      1,431,808,562
+       2  IT Services       100,000  Rs      1,440,123,276
+       3  Auto Parts        100,000  Rs      1,436,358,502
+       4  Food Tech         100,000  Rs      1,438,822,716
+        ... 990 orgs not shown ...
+     995  Pharma            100,000  Rs      1,434,456,054
+     996  Logistics         100,000  Rs      1,431,014,787
+     997  FMCG              100,000  Rs      1,432,450,227
+     998  Textile           100,000  Rs      1,436,541,751
+     999  Energy            100,000  Rs      1,420,656,542
+————————————————————————————————————————————————————————————————————————————————
+
+════════════════════════════════════════════════════════════════════════════════
+  RESULTS SUMMARY -- Invoice Intelligence Multi-Org GPU Benchmark
+════════════════════════════════════════════════════════════════════════════════
+  Total rows      : 100,000,000
+  Organisations   : 1,000   |   Rows per org: 100,000 (~14 MB each)
+
+  A) pandas sequential   : 11.667s  (11.7 ms/org)
+
+  KEY INSIGHT:
+  B loses because each org (~14 MB) is too small to amortize PCIe cost.
+  C concatenates orgs BEFORE transfer -- large compute-bound kernel.
+  org_id is just a groupby column. Tenant isolation is not a GPU concern.
+
+  BUSINESS CASE:
+  /itc-summary at 20M rows: 208ms (GPU) vs 2.35s (pandas) = 11.3x
+
+  (See cudf_benchmark.py --rows 20000000 for single-org peak)
+════════════════════════════════════════════════════════════════════════════════
+

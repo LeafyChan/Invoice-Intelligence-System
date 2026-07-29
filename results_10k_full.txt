@@ -1,0 +1,340 @@
+
+════════════════════════════════════════════════════════════════════════════════
+  Invoice Intelligence -- Multi-Org GPU Benchmark (3 strategies)
+  10,000 orgs  x  100,000 rows  =  1,000,000,000 total  |  RTX 4050
+════════════════════════════════════════════════════════════════════════════════
+
+  [A] pandas sequential...
+    pandas [ 100/10000]    1.23s  ETA 121.8s  10,000,000 rows done
+    pandas [ 200/10000]    2.54s  ETA 124.2s  20,000,000 rows done
+    pandas [ 300/10000]    3.73s  ETA 120.7s  30,000,000 rows done
+    pandas [ 400/10000]    4.92s  ETA 118.2s  40,000,000 rows done
+    pandas [ 500/10000]    6.09s  ETA 115.6s  50,000,000 rows done
+    pandas [ 600/10000]    7.24s  ETA 113.4s  60,000,000 rows done
+    pandas [ 700/10000]    8.38s  ETA 111.4s  70,000,000 rows done
+    pandas [ 800/10000]    9.51s  ETA 109.4s  80,000,000 rows done
+    pandas [ 900/10000]   10.66s  ETA 107.8s  90,000,000 rows done
+    pandas [1000/10000]   11.81s  ETA 106.3s  100,000,000 rows done
+    pandas [1100/10000]   12.96s  ETA 104.9s  110,000,000 rows done
+    pandas [1200/10000]   14.10s  ETA 103.4s  120,000,000 rows done
+    pandas [1300/10000]   15.29s  ETA 102.3s  130,000,000 rows done
+    pandas [1400/10000]   16.44s  ETA 101.0s  140,000,000 rows done
+    pandas [1500/10000]   17.57s  ETA  99.6s  150,000,000 rows done
+    pandas [1600/10000]   18.70s  ETA  98.2s  160,000,000 rows done
+    pandas [1700/10000]   19.86s  ETA  96.9s  170,000,000 rows done
+    pandas [1800/10000]   21.01s  ETA  95.7s  180,000,000 rows done
+    pandas [1900/10000]   22.24s  ETA  94.8s  190,000,000 rows done
+    pandas [2000/10000]   23.40s  ETA  93.6s  200,000,000 rows done
+    pandas [2100/10000]   24.50s  ETA  92.2s  210,000,000 rows done
+    pandas [2200/10000]   25.60s  ETA  90.8s  220,000,000 rows done
+    pandas [2300/10000]   26.73s  ETA  89.5s  230,000,000 rows done
+    pandas [2400/10000]   27.88s  ETA  88.3s  240,000,000 rows done
+    pandas [2500/10000]   28.99s  ETA  87.0s  250,000,000 rows done
+    pandas [2600/10000]   30.13s  ETA  85.8s  260,000,000 rows done
+    pandas [2700/10000]   31.24s  ETA  84.5s  270,000,000 rows done
+    pandas [2800/10000]   32.43s  ETA  83.4s  280,000,000 rows done
+    pandas [2900/10000]   33.73s  ETA  82.6s  290,000,000 rows done
+    pandas [3000/10000]   35.07s  ETA  81.8s  300,000,000 rows done
+    pandas [3100/10000]   36.27s  ETA  80.7s  310,000,000 rows done
+    pandas [3200/10000]   37.49s  ETA  79.7s  320,000,000 rows done
+    pandas [3300/10000]   38.70s  ETA  78.6s  330,000,000 rows done
+    pandas [3400/10000]   39.91s  ETA  77.5s  340,000,000 rows done
+    pandas [3500/10000]   41.09s  ETA  76.3s  350,000,000 rows done
+    pandas [3600/10000]   42.31s  ETA  75.2s  360,000,000 rows done
+    pandas [3700/10000]   43.63s  ETA  74.3s  370,000,000 rows done
+    pandas [3800/10000]   44.80s  ETA  73.1s  380,000,000 rows done
+    pandas [3900/10000]   45.95s  ETA  71.9s  390,000,000 rows done
+    pandas [4000/10000]   47.11s  ETA  70.7s  400,000,000 rows done
+    pandas [4100/10000]   48.29s  ETA  69.5s  410,000,000 rows done
+    pandas [4200/10000]   49.50s  ETA  68.4s  420,000,000 rows done
+    pandas [4300/10000]   50.80s  ETA  67.3s  430,000,000 rows done
+    pandas [4400/10000]   52.09s  ETA  66.3s  440,000,000 rows done
+    pandas [4500/10000]   53.42s  ETA  65.3s  450,000,000 rows done
+    pandas [4600/10000]   54.74s  ETA  64.3s  460,000,000 rows done
+    pandas [4700/10000]   55.93s  ETA  63.1s  470,000,000 rows done
+    pandas [4800/10000]   57.13s  ETA  61.9s  480,000,000 rows done
+    pandas [4900/10000]   58.33s  ETA  60.7s  490,000,000 rows done
+    pandas [5000/10000]   59.51s  ETA  59.5s  500,000,000 rows done
+    pandas [5100/10000]   60.72s  ETA  58.3s  510,000,000 rows done
+    pandas [5200/10000]   61.94s  ETA  57.2s  520,000,000 rows done
+    pandas [5300/10000]   63.16s  ETA  56.0s  530,000,000 rows done
+    pandas [5400/10000]   64.37s  ETA  54.8s  540,000,000 rows done
+    pandas [5500/10000]   65.57s  ETA  53.6s  550,000,000 rows done
+    pandas [5600/10000]   66.82s  ETA  52.5s  560,000,000 rows done
+    pandas [5700/10000]   68.03s  ETA  51.3s  570,000,000 rows done
+    pandas [5800/10000]   69.25s  ETA  50.1s  580,000,000 rows done
+    pandas [5900/10000]   70.63s  ETA  49.1s  590,000,000 rows done
+    pandas [6000/10000]   71.93s  ETA  48.0s  600,000,000 rows done
+    pandas [6100/10000]   73.26s  ETA  46.8s  610,000,000 rows done
+    pandas [6200/10000]   74.51s  ETA  45.7s  620,000,000 rows done
+    pandas [6300/10000]   75.66s  ETA  44.4s  630,000,000 rows done
+    pandas [6400/10000]   76.85s  ETA  43.2s  640,000,000 rows done
+    pandas [6500/10000]   78.02s  ETA  42.0s  650,000,000 rows done
+    pandas [6600/10000]   79.19s  ETA  40.8s  660,000,000 rows done
+    pandas [6700/10000]   80.41s  ETA  39.6s  670,000,000 rows done
+    pandas [6800/10000]   81.61s  ETA  38.4s  680,000,000 rows done
+    pandas [6900/10000]   82.80s  ETA  37.2s  690,000,000 rows done
+    pandas [7000/10000]   83.98s  ETA  36.0s  700,000,000 rows done
+    pandas [7100/10000]   85.17s  ETA  34.8s  710,000,000 rows done
+    pandas [7200/10000]   86.36s  ETA  33.6s  720,000,000 rows done
+    pandas [7300/10000]   87.55s  ETA  32.4s  730,000,000 rows done
+    pandas [7400/10000]   88.76s  ETA  31.2s  740,000,000 rows done
+    pandas [7500/10000]   89.96s  ETA  30.0s  750,000,000 rows done
+    pandas [7600/10000]   91.15s  ETA  28.8s  760,000,000 rows done
+    pandas [7700/10000]   92.37s  ETA  27.6s  770,000,000 rows done
+    pandas [7800/10000]   93.62s  ETA  26.4s  780,000,000 rows done
+    pandas [7900/10000]   94.83s  ETA  25.2s  790,000,000 rows done
+    pandas [8000/10000]   96.05s  ETA  24.0s  800,000,000 rows done
+    pandas [8100/10000]   97.31s  ETA  22.8s  810,000,000 rows done
+    pandas [8200/10000]   98.58s  ETA  21.6s  820,000,000 rows done
+    pandas [8300/10000]   99.82s  ETA  20.4s  830,000,000 rows done
+    pandas [8400/10000]  101.02s  ETA  19.2s  840,000,000 rows done
+    pandas [8500/10000]  102.26s  ETA  18.0s  850,000,000 rows done
+    pandas [8600/10000]  103.46s  ETA  16.8s  860,000,000 rows done
+    pandas [8700/10000]  104.68s  ETA  15.6s  870,000,000 rows done
+    pandas [8800/10000]  105.96s  ETA  14.4s  880,000,000 rows done
+    pandas [8900/10000]  107.15s  ETA  13.2s  890,000,000 rows done
+    pandas [9000/10000]  108.33s  ETA  12.0s  900,000,000 rows done
+    pandas [9100/10000]  109.55s  ETA  10.8s  910,000,000 rows done
+    pandas [9200/10000]  110.79s  ETA   9.6s  920,000,000 rows done
+    pandas [9300/10000]  112.15s  ETA   8.4s  930,000,000 rows done
+    pandas [9400/10000]  113.49s  ETA   7.2s  940,000,000 rows done
+    pandas [9500/10000]  114.79s  ETA   6.0s  950,000,000 rows done
+    pandas [9600/10000]  116.01s  ETA   4.8s  960,000,000 rows done
+    pandas [9700/10000]  117.16s  ETA   3.6s  970,000,000 rows done
+    pandas [9800/10000]  118.31s  ETA   2.4s  980,000,000 rows done
+    pandas [9900/10000]  119.45s  ETA   1.2s  990,000,000 rows done
+    pandas [10000/10000]  120.65s  ETA   0.0s  1,000,000,000 rows done
+
+————————————————————————————————————————————————————————————————————————————————
+  A) pandas sequential   |   wall-clock: 120.649s
+————————————————————————————————————————————————————————————————————————————————
+   OrgID  Industry             Rows             ITC Total
+       0  Manufacturing     100,000  Rs      1,438,657,570
+       1  Retail            100,000  Rs      1,431,808,562
+       2  IT Services       100,000  Rs      1,440,123,276
+       3  Auto Parts        100,000  Rs      1,436,358,502
+       4  Food Tech         100,000  Rs      1,438,822,716
+        ... 9990 orgs not shown ...
+    9995  Pharma            100,000  Rs      1,431,249,749
+    9996  Logistics         100,000  Rs      1,444,355,685
+    9997  FMCG              100,000  Rs      1,431,488,956
+    9998  Textile           100,000  Rs      1,429,871,795
+    9999  Energy            100,000  Rs      1,430,855,241
+————————————————————————————————————————————————————————————————————————————————
+
+  GPU warm-up (CUDA JIT, not timed)...
+  GPU ready.
+
+  [B] GPU streamed (naive, batch=8) -- expect LOSS at 100,000 rows/org...
+    GPU-stream [ 200/10000]   11.01s  ETA 539.4s
+    GPU-stream [ 400/10000]   22.02s  ETA 528.5s
+    GPU-stream [ 600/10000]   32.98s  ETA 516.7s
+    GPU-stream [ 800/10000]   44.23s  ETA 508.7s
+    GPU-stream [1000/10000]   55.46s  ETA 499.2s
+    GPU-stream [1200/10000]   66.31s  ETA 486.3s
+    GPU-stream [1400/10000]   77.15s  ETA 473.9s
+    GPU-stream [1600/10000]   86.86s  ETA 456.0s
+    GPU-stream [1800/10000]   96.46s  ETA 439.4s
+    GPU-stream [2000/10000]  106.22s  ETA 424.9s
+    GPU-stream [2200/10000]  115.71s  ETA 410.3s
+    GPU-stream [2400/10000]  125.21s  ETA 396.5s
+    GPU-stream [2600/10000]  134.91s  ETA 384.0s
+    GPU-stream [2800/10000]  144.51s  ETA 371.6s
+    GPU-stream [3000/10000]  153.83s  ETA 358.9s
+    GPU-stream [3200/10000]  163.36s  ETA 347.1s
+    GPU-stream [3400/10000]  172.95s  ETA 335.7s
+    GPU-stream [3600/10000]  182.25s  ETA 324.0s
+    GPU-stream [3800/10000]  192.11s  ETA 313.4s
+    GPU-stream [4000/10000]  202.17s  ETA 303.3s
+    GPU-stream [4200/10000]  212.59s  ETA 293.6s
+    GPU-stream [4400/10000]  224.44s  ETA 285.7s
+    GPU-stream [4600/10000]  235.98s  ETA 277.0s
+    GPU-stream [4800/10000]  246.68s  ETA 267.2s
+    GPU-stream [5000/10000]  257.18s  ETA 257.2s
+    GPU-stream [5200/10000]  268.13s  ETA 247.5s
+    GPU-stream [5400/10000]  278.21s  ETA 237.0s
+    GPU-stream [5600/10000]  289.52s  ETA 227.5s
+    GPU-stream [5800/10000]  300.67s  ETA 217.7s
+    GPU-stream [6000/10000]  312.29s  ETA 208.2s
+    GPU-stream [6200/10000]  322.30s  ETA 197.5s
+    GPU-stream [6400/10000]  332.23s  ETA 186.9s
+    GPU-stream [6600/10000]  342.00s  ETA 176.2s
+    GPU-stream [6800/10000]  351.43s  ETA 165.4s
+    GPU-stream [7000/10000]  361.05s  ETA 154.7s
+    GPU-stream [7200/10000]  370.75s  ETA 144.2s
+    GPU-stream [7400/10000]  380.32s  ETA 133.6s
+    GPU-stream [7600/10000]  391.26s  ETA 123.6s
+    GPU-stream [7800/10000]  401.80s  ETA 113.3s
+    GPU-stream [8000/10000]  411.55s  ETA 102.9s
+    GPU-stream [8200/10000]  421.53s  ETA  92.5s
+    GPU-stream [8400/10000]  431.35s  ETA  82.2s
+    GPU-stream [8600/10000]  441.32s  ETA  71.8s
+    GPU-stream [8800/10000]  450.84s  ETA  61.5s
+    GPU-stream [9000/10000]  460.32s  ETA  51.1s
+    GPU-stream [9200/10000]  470.20s  ETA  40.9s
+    GPU-stream [9400/10000]  480.37s  ETA  30.7s
+    GPU-stream [9600/10000]  490.21s  ETA  20.4s
+    GPU-stream [9800/10000]  500.53s  ETA  10.2s
+    GPU-stream [10000/10000]  511.17s  ETA   0.0s
+
+————————————————————————————————————————————————————————————————————————————————
+  B) GPU streamed (batch=8)   |   wall-clock: 511.166s
+————————————————————————————————————————————————————————————————————————————————
+   OrgID  Industry             Rows             ITC Total
+       0  Manufacturing     100,000  Rs      1,438,657,570
+       1  Retail            100,000  Rs      1,431,808,562
+       2  IT Services       100,000  Rs      1,440,123,276
+       3  Auto Parts        100,000  Rs      1,436,358,502
+       4  Food Tech         100,000  Rs      1,438,822,716
+        ... 9990 orgs not shown ...
+    9995  Pharma            100,000  Rs      1,431,249,749
+    9996  Logistics         100,000  Rs      1,444,355,685
+    9997  FMCG              100,000  Rs      1,431,488,956
+    9998  Textile           100,000  Rs      1,429,871,795
+    9999  Energy            100,000  Rs      1,430,855,241
+————————————————————————————————————————————————————————————————————————————————
+
+  [C] GPU cross-org batch (macro=100) -- 10,000,000 rows per transfer...
+    GPU-cross [ 100/10000]    3.77s  ETA 373.1s  total xfer 610 MB
+    GPU-cross [ 200/10000]    6.32s  ETA 309.7s  total xfer 1221 MB
+    GPU-cross [ 300/10000]    8.34s  ETA 269.6s  total xfer 1831 MB
+    GPU-cross [ 400/10000]   10.46s  ETA 251.0s  total xfer 2441 MB
+    GPU-cross [ 500/10000]   12.76s  ETA 242.5s  total xfer 3052 MB
+    GPU-cross [ 600/10000]   14.96s  ETA 234.3s  total xfer 3662 MB
+    GPU-cross [ 700/10000]   17.36s  ETA 230.6s  total xfer 4272 MB
+    GPU-cross [ 800/10000]   19.88s  ETA 228.7s  total xfer 4883 MB
+    GPU-cross [ 900/10000]   22.26s  ETA 225.1s  total xfer 5493 MB
+    GPU-cross [1000/10000]   24.36s  ETA 219.3s  total xfer 6104 MB
+    GPU-cross [1100/10000]   26.44s  ETA 214.0s  total xfer 6714 MB
+    GPU-cross [1200/10000]   28.56s  ETA 209.4s  total xfer 7324 MB
+    GPU-cross [1300/10000]   30.62s  ETA 204.9s  total xfer 7935 MB
+    GPU-cross [1400/10000]   32.65s  ETA 200.5s  total xfer 8545 MB
+    GPU-cross [1500/10000]   34.81s  ETA 197.2s  total xfer 9155 MB
+    GPU-cross [1600/10000]   36.94s  ETA 194.0s  total xfer 9766 MB
+    GPU-cross [1700/10000]   39.22s  ETA 191.5s  total xfer 10376 MB
+    GPU-cross [1800/10000]   41.45s  ETA 188.8s  total xfer 10986 MB
+    GPU-cross [1900/10000]   43.79s  ETA 186.7s  total xfer 11597 MB
+    GPU-cross [2000/10000]   46.23s  ETA 184.9s  total xfer 12207 MB
+    GPU-cross [2100/10000]   48.60s  ETA 182.8s  total xfer 12817 MB
+    GPU-cross [2200/10000]   51.16s  ETA 181.4s  total xfer 13428 MB
+    GPU-cross [2300/10000]   53.32s  ETA 178.5s  total xfer 14038 MB
+    GPU-cross [2400/10000]   55.46s  ETA 175.6s  total xfer 14648 MB
+    GPU-cross [2500/10000]   57.58s  ETA 172.7s  total xfer 15259 MB
+    GPU-cross [2600/10000]   59.79s  ETA 170.2s  total xfer 15869 MB
+    GPU-cross [2700/10000]   61.85s  ETA 167.2s  total xfer 16479 MB
+    GPU-cross [2800/10000]   63.92s  ETA 164.4s  total xfer 17090 MB
+    GPU-cross [2900/10000]   66.11s  ETA 161.9s  total xfer 17700 MB
+    GPU-cross [3000/10000]   68.35s  ETA 159.5s  total xfer 18311 MB
+    GPU-cross [3100/10000]   70.80s  ETA 157.6s  total xfer 18921 MB
+    GPU-cross [3200/10000]   73.40s  ETA 156.0s  total xfer 19531 MB
+    GPU-cross [3300/10000]   75.85s  ETA 154.0s  total xfer 20142 MB
+    GPU-cross [3400/10000]   78.09s  ETA 151.6s  total xfer 20752 MB
+    GPU-cross [3500/10000]   80.30s  ETA 149.1s  total xfer 21362 MB
+    GPU-cross [3600/10000]   82.47s  ETA 146.6s  total xfer 21973 MB
+    GPU-cross [3700/10000]   84.67s  ETA 144.2s  total xfer 22583 MB
+    GPU-cross [3800/10000]   86.78s  ETA 141.6s  total xfer 23193 MB
+    GPU-cross [3900/10000]   89.00s  ETA 139.2s  total xfer 23804 MB
+    GPU-cross [4000/10000]   91.08s  ETA 136.6s  total xfer 24414 MB
+    GPU-cross [4100/10000]   93.14s  ETA 134.0s  total xfer 25024 MB
+    GPU-cross [4200/10000]   95.32s  ETA 131.6s  total xfer 25635 MB
+    GPU-cross [4300/10000]   97.47s  ETA 129.2s  total xfer 26245 MB
+    GPU-cross [4400/10000]   99.71s  ETA 126.9s  total xfer 26855 MB
+    GPU-cross [4500/10000]  101.96s  ETA 124.6s  total xfer 27466 MB
+    GPU-cross [4600/10000]  104.12s  ETA 122.2s  total xfer 28076 MB
+    GPU-cross [4700/10000]  106.46s  ETA 120.0s  total xfer 28687 MB
+    GPU-cross [4800/10000]  109.17s  ETA 118.3s  total xfer 29297 MB
+    GPU-cross [4900/10000]  111.45s  ETA 116.0s  total xfer 29907 MB
+    GPU-cross [5000/10000]  113.76s  ETA 113.8s  total xfer 30518 MB
+    GPU-cross [5100/10000]  115.99s  ETA 111.4s  total xfer 31128 MB
+    GPU-cross [5200/10000]  118.35s  ETA 109.2s  total xfer 31738 MB
+    GPU-cross [5300/10000]  120.55s  ETA 106.9s  total xfer 32349 MB
+    GPU-cross [5400/10000]  123.48s  ETA 105.2s  total xfer 32959 MB
+    GPU-cross [5500/10000]  126.11s  ETA 103.2s  total xfer 33569 MB
+    GPU-cross [5600/10000]  128.49s  ETA 101.0s  total xfer 34180 MB
+    GPU-cross [5700/10000]  130.71s  ETA  98.6s  total xfer 34790 MB
+    GPU-cross [5800/10000]  132.82s  ETA  96.2s  total xfer 35400 MB
+    GPU-cross [5900/10000]  135.20s  ETA  94.0s  total xfer 36011 MB
+    GPU-cross [6000/10000]  137.52s  ETA  91.7s  total xfer 36621 MB
+    GPU-cross [6100/10000]  139.80s  ETA  89.4s  total xfer 37231 MB
+    GPU-cross [6200/10000]  142.10s  ETA  87.1s  total xfer 37842 MB
+    GPU-cross [6300/10000]  144.50s  ETA  84.9s  total xfer 38452 MB
+    GPU-cross [6400/10000]  146.77s  ETA  82.6s  total xfer 39063 MB
+    GPU-cross [6500/10000]  148.93s  ETA  80.2s  total xfer 39673 MB
+    GPU-cross [6600/10000]  151.08s  ETA  77.8s  total xfer 40283 MB
+    GPU-cross [6700/10000]  153.43s  ETA  75.6s  total xfer 40894 MB
+    GPU-cross [6800/10000]  155.51s  ETA  73.2s  total xfer 41504 MB
+    GPU-cross [6900/10000]  157.55s  ETA  70.8s  total xfer 42114 MB
+    GPU-cross [7000/10000]  159.53s  ETA  68.4s  total xfer 42725 MB
+    GPU-cross [7100/10000]  161.68s  ETA  66.0s  total xfer 43335 MB
+    GPU-cross [7200/10000]  163.79s  ETA  63.7s  total xfer 43945 MB
+    GPU-cross [7300/10000]  166.16s  ETA  61.5s  total xfer 44556 MB
+    GPU-cross [7400/10000]  168.65s  ETA  59.3s  total xfer 45166 MB
+    GPU-cross [7500/10000]  171.12s  ETA  57.0s  total xfer 45776 MB
+    GPU-cross [7600/10000]  173.70s  ETA  54.9s  total xfer 46387 MB
+    GPU-cross [7700/10000]  176.08s  ETA  52.6s  total xfer 46997 MB
+    GPU-cross [7800/10000]  178.45s  ETA  50.3s  total xfer 47607 MB
+    GPU-cross [7900/10000]  180.80s  ETA  48.1s  total xfer 48218 MB
+    GPU-cross [8000/10000]  183.17s  ETA  45.8s  total xfer 48828 MB
+    GPU-cross [8100/10000]  185.46s  ETA  43.5s  total xfer 49438 MB
+    GPU-cross [8200/10000]  187.75s  ETA  41.2s  total xfer 50049 MB
+    GPU-cross [8300/10000]  190.16s  ETA  38.9s  total xfer 50659 MB
+    GPU-cross [8400/10000]  192.54s  ETA  36.7s  total xfer 51270 MB
+    GPU-cross [8500/10000]  194.71s  ETA  34.4s  total xfer 51880 MB
+    GPU-cross [8600/10000]  196.88s  ETA  32.1s  total xfer 52490 MB
+    GPU-cross [8700/10000]  198.98s  ETA  29.7s  total xfer 53101 MB
+    GPU-cross [8800/10000]  201.18s  ETA  27.4s  total xfer 53711 MB
+    GPU-cross [8900/10000]  203.30s  ETA  25.1s  total xfer 54321 MB
+    GPU-cross [9000/10000]  205.40s  ETA  22.8s  total xfer 54932 MB
+    GPU-cross [9100/10000]  207.66s  ETA  20.5s  total xfer 55542 MB
+    GPU-cross [9200/10000]  209.79s  ETA  18.2s  total xfer 56152 MB
+    GPU-cross [9300/10000]  211.98s  ETA  16.0s  total xfer 56763 MB
+    GPU-cross [9400/10000]  214.28s  ETA  13.7s  total xfer 57373 MB
+    GPU-cross [9500/10000]  216.65s  ETA  11.4s  total xfer 57983 MB
+    GPU-cross [9600/10000]  218.90s  ETA   9.1s  total xfer 58594 MB
+    GPU-cross [9700/10000]  221.18s  ETA   6.8s  total xfer 59204 MB
+    GPU-cross [9800/10000]  223.33s  ETA   4.6s  total xfer 59814 MB
+    GPU-cross [9900/10000]  225.44s  ETA   2.3s  total xfer 60425 MB
+    GPU-cross [10000/10000]  227.85s  ETA   0.0s  total xfer 61035 MB
+
+————————————————————————————————————————————————————————————————————————————————
+  C) GPU cross-org batch (macro=100)   |   wall-clock: 227.850s
+————————————————————————————————————————————————————————————————————————————————
+   OrgID  Industry             Rows             ITC Total
+       0  Manufacturing     100,000  Rs      1,438,657,570
+       1  Retail            100,000  Rs      1,431,808,562
+       2  IT Services       100,000  Rs      1,440,123,276
+       3  Auto Parts        100,000  Rs      1,436,358,502
+       4  Food Tech         100,000  Rs      1,438,822,716
+        ... 9990 orgs not shown ...
+    9995  Pharma            100,000  Rs      1,431,249,749
+    9996  Logistics         100,000  Rs      1,444,355,685
+    9997  FMCG              100,000  Rs      1,431,488,956
+    9998  Textile           100,000  Rs      1,429,871,795
+    9999  Energy            100,000  Rs      1,430,855,241
+————————————————————————————————————————————————————————————————————————————————
+
+════════════════════════════════════════════════════════════════════════════════
+  RESULTS SUMMARY -- Invoice Intelligence Multi-Org GPU Benchmark
+════════════════════════════════════════════════════════════════════════════════
+  Total rows      : 1,000,000,000
+  Organisations   : 10,000   |   Rows per org: 100,000 (~14 MB each)
+
+  A) pandas sequential   : 120.649s  (12.1 ms/org)
+  B) GPU streamed        : 511.166s  (0.2x)  LOSES to pandas -- PCIe overhead > compute gain
+     results match       : Yes
+  C) GPU cross-org batch : 227.850s  (0.5x)  marginal
+     results match       : Yes
+
+  KEY INSIGHT:
+  B loses because each org (~14 MB) is too small to amortize PCIe cost.
+  C concatenates orgs BEFORE transfer -- large compute-bound kernel.
+  org_id is just a groupby column. Tenant isolation is not a GPU concern.
+
+  BUSINESS CASE:
+  /itc-summary at 20M rows: 208ms (GPU) vs 2.35s (pandas) = 11.3x
+  Nightly batch 1,000 orgs: 227.8s vs 120.6s
+  At 10,000 orgs: ~4 min vs ~2 min
+  (See cudf_benchmark.py --rows 20000000 for single-org peak)
+════════════════════════════════════════════════════════════════════════════════
+

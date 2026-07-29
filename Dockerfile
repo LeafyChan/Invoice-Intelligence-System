@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir -r requirements_cloudrun.txt
 COPY core /core
 COPY webapp/backend/app /app/app
 COPY bq_service_account.json /app/bq_service_account.json
+COPY gdrive_key.json /app/gdrive_key.json
+ENV GDRIVE_KEY_PATH="/app/gdrive_key.json"
 ENV GOOGLE_APPLICATION_CREDENTIALS="/app/bq_service_account.json"
 ENV PYTHONPATH="/:/app:/core:${PYTHONPATH}"
 EXPOSE 8080

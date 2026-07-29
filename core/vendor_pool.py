@@ -1,34 +1,5 @@
-"""
-vendor_pool.py — Issue 13: Synthetic Data Vendor Repetition Fix
-================================================================
-Drop this file into your synthetic data generator folder and import
-VENDOR_POOL + weighted_vendor_pick() wherever vendor names are assigned.
-
-PROBLEM: The old generator created a unique vendor per transaction, so
-the vendor scoring engine never accumulated enough history per vendor to
-produce meaningful grades. Every vendor had 1 invoice = useless scores.
-
-FIX: A pool of 15 vendors with weighted selection so the top 5 each get
-8-10 transactions across a 50-doc dataset, giving the vendor intelligence
-feature something real to display.
-
-USAGE in your assembler/generator:
-    from vendor_pool import weighted_vendor_pick, VENDOR_POOL
-
-    # Replace:  vendor_name = fake.company()
-    # With:     vendor = weighted_vendor_pick()
-    #           vendor_name = vendor["name"]
-    #           vendor_gstin = vendor["gstin"]
-"""
-
 import random
-
-# ── 15 realistic Indian vendor names with GSTINs ─────────────────────────────
-# GSTINs are synthetic (correct format: 2-digit state + 10-char PAN + Z + 1).
-# State code 27 = Maharashtra (most common for B2B demos).
-
 VENDOR_POOL = [
-    # ── Top 5 — high-frequency, Grade A/B targets ──────────────────────────
     {
         "name": "Tata Steel Limited",
         "gstin": "27AAACT2727Q1ZV",
@@ -59,8 +30,6 @@ VENDOR_POOL = [
         "hsn_codes": ["3401", "3402", "2101"],
         "tier": "top",
     },
-
-    # ── Mid tier — occasional suppliers ──────────────────────────────────
     {
         "name": "Asian Paints Limited",
         "gstin": "27AAACA4803F1ZA",
@@ -91,8 +60,6 @@ VENDOR_POOL = [
         "hsn_codes": ["2402", "4802"],
         "tier": "mid",
     },
-
-    # ── Tail vendors — rare, varied, some with quality issues ─────────────
     {
         "name": "Pune Precision Components",
         "gstin": "27AACPP1234K1ZQ",
@@ -132,15 +99,6 @@ _NEW    = [v for v in VENDOR_POOL if v["tier"] == "new"]
 
 
 def weighted_vendor_pick() -> dict:
-    """
-    Returns one vendor dict from VENDOR_POOL with weighted probability:
-      60% — top 5 vendors  (8-10 transactions in a 50-doc dataset)
-      30% — mid 5 vendors  (2-4 transactions each)
-      10% — tail + new     (0-2 transactions each)
-
-    This ensures the vendor scorecard has at least 3 vendors with Grade A/B
-    profiles and enough transaction history to show meaningful grading signals.
-    """
     roll = random.random()
     if roll < 0.60:
         return random.choice(_TOP)
@@ -150,27 +108,6 @@ def weighted_vendor_pick() -> dict:
         return random.choice(_TAIL)
     else:
         return random.choice(_NEW)
-
-
-# ── Integration example ───────────────────────────────────────────────────────
-# In your transaction/document assembler, replace:
-#
-#   vendor_name  = fake.company()
-#   vendor_gstin = fake_gstin()
-#
-# With:
-#
-#   from vendor_pool import weighted_vendor_pick
-#   _v = weighted_vendor_pick()
-#   vendor_name  = _v["name"]
-#   vendor_gstin = _v["gstin"]          # may be None for unregistered
-#   hsn_codes    = _v["hsn_codes"]      # use these for line item HSN fields
-#
-# For Issue 8 alignment: the simulated business should have outward supply
-# HSN codes that are DIFFERENT from what vendors supply (e.g. if the simulated
-# business is a furniture manufacturer, its outward HSNs are 9401/9403 while
-# its inward purchase HSNs from vendors are 4403/7214/8466 etc).
-
 if __name__ == "__main__":
     # Quick distribution test
     from collections import Counter

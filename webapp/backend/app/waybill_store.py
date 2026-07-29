@@ -1,10 +1,8 @@
-"""waybill_store.py — fixed get_processed_drive_ids to only skip successfully extracted files"""
 from __future__ import annotations
 import json
 from uuid import uuid4
 from sqlalchemy import text
 from .db import get_org_scoped_db
-
 
 def upsert_waybill(org_id: str, data: dict, drive_file_id: str = None, file_name: str = None) -> str:
     waybill_id = str(uuid4())
@@ -95,7 +93,6 @@ def upsert_waybill(org_id: str, data: dict, drive_file_id: str = None, file_name
         })
     return waybill_id
 
-
 def list_waybills(org_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
     with get_org_scoped_db(org_id) as db:
         rows = db.execute(text("""
@@ -109,7 +106,6 @@ def list_waybills(org_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
         """), {"limit": limit, "offset": offset}).fetchall()
     return [dict(r._mapping) for r in rows]
 
-
 def get_waybill(org_id: str, waybill_id: str) -> dict | None:
     with get_org_scoped_db(org_id) as db:
         row = db.execute(text("""
@@ -117,13 +113,7 @@ def get_waybill(org_id: str, waybill_id: str) -> dict | None:
         """), {"waybill_id": waybill_id}).fetchone()
     return dict(row._mapping) if row else None
 
-
 def get_processed_drive_ids(db, org_id: str) -> set:
-    """
-    Returns drive_file_ids where extraction actually produced a usable waybill row
-    (ewb_number is not null = the LLM returned a real document, not garbage).
-    Files with null ewb_number were failed/partial extractions and must be retried.
-    """
     rows = db.execute(
         text("""
             SELECT drive_file_id FROM waybills
@@ -134,7 +124,6 @@ def get_processed_drive_ids(db, org_id: str) -> set:
         {"oid": org_id}
     ).fetchall()
     return {r[0] for r in rows}
-
 
 def save_waybill_row(db, org_id: str, row: dict, drive_file_id: str = None, file_name: str = None) -> str:
     return upsert_waybill(

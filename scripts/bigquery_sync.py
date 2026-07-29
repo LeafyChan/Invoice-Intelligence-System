@@ -1,43 +1,3 @@
-"""
-bigquery_sync.py
-=================
-One-way export: Postgres (your real, RLS-protected source of truth) -->
-BigQuery Sandbox (a free, no-card analytics mirror). Read-only in this
-direction — BigQuery here is a reporting layer, not a second source of
-truth, so nothing about your existing RLS/auth model needs to change or
-be trusted with a new attack surface.
-
-WHY A BATCH LOAD, NOT STREAMING INSERTS OR "INSERT INTO ... SELECT":
-BigQuery Sandbox (no billing account attached) explicitly disallows
-streaming inserts and DML statements (INSERT/UPDATE/DELETE via query) —
-see https://cloud.google.com/bigquery/docs/sandbox. Batch LOAD JOBS
-(what this file does — write rows to a local file, then load_table_from_file)
-ARE supported in sandbox mode. This isn't a workaround; it's the
-documented, intended way to get data into a sandbox project.
-
-ONE-TIME GCP SETUP (all free, no card, no billing account — do NOT click
-"enable billing" anywhere in this flow):
-  1. console.cloud.google.com -> sign in with any Google account
-  2. Select a project -> New Project -> name it, e.g. "invoice-intel-demo"
-     -> Create. Do NOT attach a billing account.
-  3. Left menu -> BigQuery. First time you open it in a project with no
-     billing, you'll see a "Sandbox" banner — that confirms you're in
-     free/no-card mode.
-  4. IAM & Admin -> Service Accounts -> Create service account -> grant it
-     "BigQuery Data Editor" + "BigQuery Job User" roles (project-scoped,
-     not billing-scoped — this step does NOT require billing to be
-     enabled) -> Keys -> Add key -> JSON -> download.
-  5. pip install google-cloud-bigquery
-
-Env vars:
-  GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
-  BQ_PROJECT_ID=your-project-id
-  BQ_DATASET=invoice_intel   (created automatically if missing)
-
-Usage:
-  python bigquery_sync.py --db-url "postgresql://...supabase pooler URI..." --org-id <uuid>
-"""
-
 import argparse
 import os
 import sys
@@ -62,10 +22,6 @@ WHERE li.org_id = :org_id AND i.status != 'FAILED'
 
 
 def _fetch_rows(db_url: str, org_id: str):
-    """Reads from Postgres using the SAME org-scoped RLS pattern as the
-    rest of the backend (db.py's _session_with_org) — this export
-    respects tenant isolation exactly like every other read path, it's
-    just a one-off script rather than a FastAPI route."""
     from sqlalchemy import create_engine, text
 
     engine = create_engine(db_url)
@@ -112,14 +68,9 @@ def sync_to_bigquery(rows: list[dict]):
 
     job_config = bigquery.LoadJobConfig(
         schema=schema,
-        write_disposition="WRITE_TRUNCATE",  # full refresh each sync — simplest correct behavior for a demo-scale export
+        write_disposition="WRITE_TRUNCATE",  
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
     )
-
-    # BATCH load from an in-memory newline-delimited JSON stream — this is
-    # the sandbox-compatible path (see module docstring). Not a streaming
-    # insert, not DML.
-    import io
     import json
 
     buf = io.StringIO()
@@ -129,7 +80,7 @@ def sync_to_bigquery(rows: list[dict]):
     buf.seek(0)
 
     load_job = client.load_table_from_file(buf, table_ref, job_config=job_config)
-    load_job.result()  # blocks until the batch load completes
+    load_job.result()  
 
     print(f"Loaded {len(rows):,} rows into {PROJECT_ID}.{DATASET_ID}.line_items_flat")
 

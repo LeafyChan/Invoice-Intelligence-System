@@ -1,36 +1,3 @@
-"""
-extractor.py
-============
-Turns raw OCR text OR a page image into structured invoice JSON.
-
-Two entry points:
-  extract_from_text(text, schema)    -> for digital_text / ocr_printed pages
-  extract_from_image(image, schema)  -> for needs_vision_ai pages (handwritten,
-                                          messy scans, stamps, non-standard layouts)
-
-TWO PROVIDERS, SPLIT BY TASK:
-  - extract_from_text  -> Groq (gpt-oss-120b), json_object mode.
-  - extract_from_image -> Gemini (gemini-2.5-flash-lite), vision path.
-
-TEXT PRE-PROCESSING (before any API call):
-  1. Blank check  — under 50 chars → skip API, return stub.
-  2. Compress     — collapse whitespace runs, deduplicate repeated header/footer
-                    lines (common in multi-page PDFs). Typically halves token count.
-  3. Head + tail  — if still over MAX_INPUT_CHARS after compression, keep first
-                    HEAD_CHARS + last TAIL_CHARS with an explicit separator in
-                    between. This preserves BOTH the invoice header (vendor, line
-                    items) AND the footer (payment terms, incoterms, delivery
-                    address) — critical for S17 supply-chain fields. The dropped
-                    middle is almost always repeated line-item boilerplate.
-
-RATE LIMITING / RETRY:
-  Exponential backoff on 429 / RESOURCE_EXHAUSTED. Daily-quota errors fail fast
-  (no retries) since waiting won't help until tomorrow's reset.
-
-DEMO_MODE: set INVOICE_OCR_DEMO_MODE=1 to run regex-based extraction with no
-  API calls — useful for local dev without keys.
-"""
-
 import json
 import os
 import re
@@ -40,24 +7,18 @@ import time
 from PIL import Image
 
 DEMO_MODE = os.environ.get("INVOICE_OCR_DEMO_MODE", "1") == "1"
-
 GEMINI_MODEL_NAME = "gemini-2.5-flash-lite"
 GROQ_MODEL_NAME   = "llama-3.3-70b-versatile"
-
 MIN_SECONDS_BETWEEN_CALLS = {
     "gemini": 4.5,
     "groq":   2.5,
 }
-
 MAX_RETRIES             = 5
 INITIAL_BACKOFF_SECONDS = 15
-
-# Token budget constants
 MIN_MEANINGFUL_CHARS = 50
 MAX_INPUT_CHARS      = 12_000
-HEAD_CHARS           = 7_000   # header, vendor block, line items
-TAIL_CHARS           = 5_000   # payment terms, incoterms, delivery address, totals
-
+HEAD_CHARS           = 7_000   
+TAIL_CHARS           = 5_000   
 _RATE_LIMIT_MARKERS = (
     "429", "RESOURCE_EXHAUSTED", "quota", "rate limit", "RateLimit",
     "rate_limit_exceeded",
@@ -65,9 +26,6 @@ _RATE_LIMIT_MARKERS = (
 _DAILY_QUOTA_MARKERS = ("PerDay", "per day", "RPD", "daily")
 
 _last_call_time: dict[str, float] = {"gemini": 0.0, "groq": 0.0}
-
-
-# ── Rate limiting ─────────────────────────────────────────────────────────────
 
 def _throttle(provider: str):
     elapsed   = time.monotonic() - _last_call_time[provider]
@@ -197,19 +155,7 @@ def _build_prompt(schema: dict) -> str:
         optional_fields=", ".join(schema["optional_fields"]),
     )
 
-
-# ── Text pre-processing ───────────────────────────────────────────────────────
-
 def _compress_text(text: str) -> str:
-    """
-    Collapse whitespace noise without losing content:
-      - Strip trailing whitespace per line
-      - Collapse runs of 3+ blank lines → 2 blank lines
-      - Deduplicate adjacent identical lines (catches repeated page headers/footers)
-
-    Typically halves the char count of a multi-page PDF without dropping any
-    invoice data, meaning most docs never hit the head+tail truncation at all.
-    """
     lines      = [l.rstrip() for l in text.splitlines()]
     compressed = []
     blank_run  = 0
@@ -222,7 +168,7 @@ def _compress_text(text: str) -> str:
         else:
             blank_run = 0
             if line == prev_nonblank:
-                continue   # skip repeated header/footer line
+                continue   
             prev_nonblank = line
             compressed.append(line)
     return "\n".join(compressed)
@@ -255,8 +201,6 @@ def _prepare_text(raw: str) -> tuple[str | None, str]:
 
     if len(compressed) <= MAX_INPUT_CHARS:
         return compressed, ""
-
-    # Head + tail: keep both ends, drop the middle (repeated line-item rows)
     head      = compressed[:HEAD_CHARS]
     tail      = compressed[-TAIL_CHARS:]
     separator = (
@@ -271,9 +215,6 @@ def _prepare_text(raw: str) -> tuple[str | None, str]:
     )
     return result, ""
 
-
-# ── API callers ───────────────────────────────────────────────────────────────
-
 def _call_groq_text(prompt: str, document_text: str, schema: dict) -> dict:
     from groq import Groq
     client   = Groq()
@@ -287,7 +228,6 @@ def _call_groq_text(prompt: str, document_text: str, schema: dict) -> dict:
     )
     return _clean_json_response(response.choices[0].message.content)
 
-
 def _call_gemini_text(prompt: str, document_text: str) -> dict:
     from google import genai
     client   = genai.Client()
@@ -297,7 +237,6 @@ def _call_gemini_text(prompt: str, document_text: str) -> dict:
     )
     return _clean_json_response(response.text)
 
-
 def _call_gemini_vision(prompt: str, image: Image.Image) -> dict:
     from google import genai
     client   = genai.Client()
@@ -306,7 +245,6 @@ def _call_gemini_vision(prompt: str, image: Image.Image) -> dict:
         contents=[prompt, image],
     )
     return _clean_json_response(response.text)
-
 
 def _clean_json_response(raw: str) -> dict:
     raw = raw.strip()
@@ -325,22 +263,15 @@ def _clean_json_response(raw: str) -> dict:
         except json.JSONDecodeError:
             raise first_error
 
-
-# ── Stubs ─────────────────────────────────────────────────────────────────────
-
 def _demo_stub(reason: str, schema: dict) -> dict:
     stub = {f: None for f in schema["required_fields"] + schema["optional_fields"]}
     stub["_extraction_note"] = f"DEMO_MODE stub — {reason}."
     return stub
 
-
 def _skip_stub(reason: str, schema: dict) -> dict:
     stub = {f: None for f in schema["required_fields"] + schema["optional_fields"]}
     stub["_extraction_note"] = reason
     return stub
-
-
-# ── Demo regex parser (no API key needed) ─────────────────────────────────────
 
 _DEMO_FIELD_PATTERNS = {
     "vendor_name":    r"(?:^|\n)([A-Z][A-Za-z .&]+(?:Ltd|Limited|Pvt Ltd|Traders|Enterprises|Stores|GmbH|Inc|Mart|Co))\n",
@@ -414,22 +345,17 @@ def _demo_text_parser(document_text: str, schema: dict) -> dict:
     result["_extraction_note"] = "DEMO_MODE regex stand-in — no live API call."
     return result
 
-
-# ── Public entry points ───────────────────────────────────────────────────────
-
 def extract_from_text(document_text: str, schema: dict) -> dict:
     prompt = _build_prompt(schema)
 
     if DEMO_MODE:
         return _demo_text_parser(document_text, schema)
 
-    # Pre-process: blank check → compress → head+tail if needed
     prepared, skip_reason = _prepare_text(document_text)
     if prepared is None:
         print(f"   [skipping API call — {skip_reason}]", file=sys.stderr)
         return _skip_stub(skip_reason, schema)
 
-    # Groq → Gemini fallback
     if os.environ.get("GROQ_API_KEY"):
         try:
             return _call_with_retry("groq", _call_groq_text, prompt, prepared, schema)

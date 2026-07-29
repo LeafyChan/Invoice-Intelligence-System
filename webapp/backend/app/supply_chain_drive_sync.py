@@ -1,11 +1,3 @@
-"""
-supply_chain_drive_sync.py — fixed error logging for waybill/grn/mrn sync
-
-Changes vs original:
-  get_processed_drive_ids in each store now only returns successfully extracted
-  rows (number field not null), so failed files are retried automatically.
-  Errors are logged to activity_log with the actual exception message.
-"""
 from __future__ import annotations
 import logging
 from pathlib import Path
@@ -16,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 def _log_sync_error(db, org_id: str, file_name: str, drive_file_id: str,
                     entity_type: str, error: str):
-    """Write extraction error to activity_log — shows in Activity tab."""
     try:
         db.execute(
             text(
@@ -67,8 +58,6 @@ def _run_sync(
         finally:
             if local_path:
                 Path(local_path).unlink(missing_ok=True)
-
-        # Log if the extractor itself returned a failure signal
         if data.get("status") == "FAILED" or not data.get(number_key):
             issues = data.get("issues") or f"Extraction returned no {number_key} — LLM may have failed"
             _log_sync_error(db, org_id, f["name"], f["id"], entity_type, issues)

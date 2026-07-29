@@ -1,29 +1,9 @@
-"""
-po_extractor.py
-================
-Extracts structured data from Purchase Order PDFs/images. Deliberately does
-NOT reimplement Groq/Gemini calling, retry, or demo-stub logic — it imports
-those directly from extractor.py and reuses them as-is. That logic is where
-this project's hardest bugs have lived (Bug 16: Groq strict-schema 400s;
-Bug 18: Gemini-only fallback silently eating the Groq path) — duplicating
-it here would mean every future fix to extractor.py needs a matching,
-easy-to-forget fix here too. Only the PROMPT differs (POs vs invoices),
-which is the one genuinely PO-specific piece.
-
-USAGE (mirrors extractor.py's public surface exactly):
-    extracted = po_extractor.extract_from_text(document_text, po_schema)
-    extracted = po_extractor.extract_from_image(image, po_schema)
-
-Both accept po_schema.json (or any dict shaped like it: required_fields /
-optional_fields keys are all _build_po_prompt needs).
-"""
-
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import extractor  # noqa: E402 — reused for _call_with_retry, _call_groq_text, etc.
+import extractor
 
 PO_EXTRACTION_INSTRUCTIONS_TEMPLATE = """You are extracting structured data from a Purchase Order (PO) document —
 an internal order document a buyer sends to a vendor, NOT an invoice. Return
@@ -89,11 +69,6 @@ def _build_po_prompt(schema: dict) -> str:
 def extract_from_text(document_text: str, schema: dict) -> dict:
     prompt = _build_po_prompt(schema)
     if extractor.DEMO_MODE:
-        # POs don't have a dedicated demo-mode regex parser (extractor.py's
-        # _demo_text_parser is invoice-shaped: vendor_name/buyer_name/GSTIN
-        # patterns tuned for invoice layouts, not PO layouts). Returning the
-        # stub directly here, rather than calling extractor._demo_text_parser,
-        # avoids silently mislabeling PO fields with invoice-shaped guesses.
         return extractor._demo_stub(
             "PO extraction has no demo-mode parser; set INVOICE_OCR_DEMO_MODE=0 "
             "and configure GROQ_API_KEY/GEMINI_API_KEY to run live", schema)
@@ -113,7 +88,6 @@ def extract_from_text(document_text: str, schema: dict) -> dict:
 
 
 def extract_from_image(image, schema: dict) -> dict:
-    # Same Groq vision limitation as extractor.py — vision stays Gemini-only.
     prompt = _build_po_prompt(schema)
     if extractor.DEMO_MODE:
         return extractor._demo_stub(

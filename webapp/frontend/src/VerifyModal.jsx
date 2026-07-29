@@ -1,37 +1,6 @@
-/**
- * VerifyModal.jsx
- * ===============
- * Human verification overlay. Three purposes:
- *
- * 1. STAMP: Marks the invoice as is_user_verified=true via PATCH /invoices/{id}.
- *    This sets the "✓ Verified" badge and feeds the verification rate metric.
- *
- * 2. CHECKLIST: Three quick yes/no checks the reviewer answers before stamping:
- *      - Vendor GSTIN matches source document
- *      - Amounts reconcile (taxable + GST = total)
- *      - ITC is eligible for this line of business
- *    These are saved as a JSON blob in the `verification_note` field so every
- *    verification decision is auditable.
- *
- * 3. TRAINING DATA: Each verification creates a structured ground-truth record
- *    at POST /training-exports (if the endpoint exists). The record contains
- *    the full extracted fields plus the human's corrections and checklist
- *    answers — exactly the shape needed to fine-tune the extraction model later.
- *    If the endpoint doesn't exist yet (404), the export is silently skipped;
- *    verification itself always succeeds regardless.
- *
- * Props:
- *   invoiceId   — string
- *   data        — full invoice detail object
- *   getToken    — async () => string
- *   onClose     — () => void
- *   onVerified  — () => void  (parent refetches invoice after stamp)
- */
-
 import { useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";
-
 const CHECKS = [
   {
     id: "gstin_match",
@@ -65,8 +34,6 @@ export default function VerifyModal({ invoiceId, data, getToken, onClose, onVeri
     setErr(null);
     try {
       const tok = await getToken();
-
-      // Build structured verification note — this is the training data anchor
       const verificationPayload = {
         checks,
         note: note.trim() || null,
@@ -106,12 +73,6 @@ export default function VerifyModal({ invoiceId, data, getToken, onClose, onVeri
         }),
       });
       if (!res.ok) throw new Error(`PATCH failed: HTTP ${res.status}`);
-
-      // 2. Write training export record (fire-and-forget, non-fatal)
-      // This endpoint collects human-verified ground truth for model fine-tuning.
-      // Shape: { invoice_id, source_type, confidence, extracted_fields,
-      //          human_corrections (fields changed after extraction),
-      //          verification_checks, verification_note }
       try {
         await fetch(`${API_BASE}/training-exports`, {
           method: "POST",
@@ -128,7 +89,6 @@ export default function VerifyModal({ invoiceId, data, getToken, onClose, onVeri
             any_check_failed:     anyFailed,
           }),
         });
-        // 404 = endpoint not implemented yet — silently skip, don't fail
       } catch (_) {}
 
       onVerified();

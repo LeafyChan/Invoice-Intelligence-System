@@ -1,12 +1,5 @@
-"""
-app/po_store.py
-================
-Persistence for purchase_orders / po_line_items.
-"""
-
 import json
 from datetime import datetime
-
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 

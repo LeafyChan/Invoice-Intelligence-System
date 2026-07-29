@@ -1,9 +1,3 @@
-/**
- * VendorScorecard.jsx
- * ===================
- * Vendor reliability scores computed from GRN + MR + Invoice + PO data.
- * Uses getToken pattern matching the rest of the app.
- */
 import { useState, useEffect, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";

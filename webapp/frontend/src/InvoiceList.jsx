@@ -1,5 +1,3 @@
-// InvoiceList.jsx — Advanced Search + payment overdue + mark-as-paid
-
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import ReviewModal from "./ReviewModal";
@@ -382,15 +380,13 @@ function SidePanel({ inv, onClose, getToken, hsnProfile, onHsnProfileUpdate, res
     </div>
   );
 }
-
-// ── Main ──────────────────────────────────────────────────────────────────────
 export default function InvoiceList() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const [data, setData]           = useState(null);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState(null);
-  const [advFilters, setAdvFilters] = useState(null);   // Advanced search filters
-  const [overdueOnly, setOverdueOnly] = useState(false); // kept for banner button
+  const [advFilters, setAdvFilters] = useState(null);
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [page, setPage]           = useState(1);
   const [sortBy, setSortBy]       = useState("processed_at");
   const [sortDir, setSortDir]     = useState("desc");
@@ -402,8 +398,6 @@ export default function InvoiceList() {
   const [rescanning, setRescanning] = useState(false);
   const [rescanMsg, setRescanMsg] = useState(null);
   const [markingPaidId, setMarkingPaidId] = useState(null);
-
-  // ── Client-side filter (post-fetch) ─────────────────────────────────────────
   function applyClientFilters(invoices) {
     if (!advFilters) return invoices;
     const f = advFilters;
@@ -425,7 +419,6 @@ export default function InvoiceList() {
       const tok = await getToken({ skipCache:true });
       const f = advFilters || {};
       const p = new URLSearchParams({ page, page_size:50, sort_by:sortBy, sort_dir:sortDir });
-      // Text / backend-supported filters
       if (f.search)      p.set("search",       f.search);
       if (f.status)      p.set("status",        f.status);
       if (f.vendor_gstin) p.set("vendor_gstin", f.vendor_gstin);

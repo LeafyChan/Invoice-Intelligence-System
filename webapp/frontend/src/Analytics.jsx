@@ -1,17 +1,3 @@
-/**
- * Analytics.jsx
- * =============
- * BigQuery-backed analytics tab. Two panels:
- *   1. Monthly ITC trend — line chart from /analytics/itc-trend
- *   2. Vendor reliability — flag-rate table from /analytics/vendor-reliability
- *
- * Both routes return { bq_configured: false } when BQ env vars are missing,
- * which we surface as a friendly setup nudge rather than an error.
- *
- * Props:
- *   getToken — async () => string
- */
-
 import { useState, useEffect, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
@@ -21,8 +7,6 @@ function formatINR(n) {
     minimumFractionDigits: 0, maximumFractionDigits: 0,
   })}`;
 }
-
-// ── Tiny SVG line chart ───────────────────────────────────────────────────────
 
 function LineChart({ data, valueKey = "claimable_itc", labelKey = "month", height = 120 }) {
   if (!data || data.length === 0) return null;
@@ -84,8 +68,6 @@ function LineChart({ data, valueKey = "claimable_itc", labelKey = "month", heigh
   );
 }
 
-// ── Not configured nudge ──────────────────────────────────────────────────────
-
 function BqNudge() {
   return (
     <div style={{
@@ -105,8 +87,6 @@ function BqNudge() {
     </div>
   );
 }
-
-// ── Main component ────────────────────────────────────────────────────────────
 
 export default function Analytics({ getToken }) {
   const [trend, setTrend]         = useState(null);

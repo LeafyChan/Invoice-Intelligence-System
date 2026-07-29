@@ -1,27 +1,8 @@
-"""
-app/exception_store.py
-========================
-Persistence for the `exceptions` table.
-
-S19 changes:
-- insert_exceptions now handles waybill_id, grn_id, mrn_id columns
-  produced by supply_chain_reconciliation.run_supply_chain_reconciliation().
-- INSERT columns updated to match the full supply-chain exception shape.
-"""
-
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 
 def insert_exceptions(db: Session, org_id: str, exceptions: list[dict]) -> int:
-    """
-    Inserts reconciliation exception dicts into the exceptions table.
-    Handles both legacy invoice/po/gstr2b exceptions and new supply-chain
-    exceptions that carry waybill_id, grn_id, mrn_id, vendor_id.
-
-    Does NOT de-duplicate — callers that want at-most-one-open-exception-per-cause
-    should clear stale exceptions before calling (see /supply-chain/reconcile route).
-    """
     count = 0
     for exc in exceptions:
         db.execute(
@@ -65,10 +46,6 @@ def clear_stale_open_exceptions(
     db: Session, org_id: str, exception_type: str,
     still_valid_invoice_ids: set, still_valid_gstr2b_ids: set
 ) -> int:
-    """
-    Auto-resolves open exceptions whose underlying cause is no longer present.
-    Only touches 'open' status — never overrides human 'ignored' or 'resolved'.
-    """
     rows = db.execute(
         text(
             "SELECT exception_id, invoice_id, gstr2b_id FROM exceptions "

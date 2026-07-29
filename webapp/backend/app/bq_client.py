@@ -1,30 +1,3 @@
-"""
-bq_client.py
-============
-Singleton BigQuery client + helpers used by the live application.
-
-Two things this file does:
-  1. stream_invoice_line_items() — called by drive_sync.py immediately
-     after invoice_store.save_invoice_row() commits, so BigQuery stays
-     current with every Drive sync rather than needing a manual export.
-  2. query_analytics() — thin wrapper used by the /analytics/* routes
-     in main.py to run the ITC trend and vendor reliability queries.
-
-BigQuery Sandbox notes:
-  - Streaming inserts (client.insert_rows_json) are BLOCKED in sandbox
-    mode. We use load_table_from_file (batch load job) instead — this is
-    the documented sandbox-compatible path, not a workaround.
-  - To keep latency acceptable we buffer rows in memory and flush in one
-    load job per sync call, not one job per row.
-  - On any BQ error we log and continue — BQ failure must never block the
-    primary Postgres write path.
-
-Env vars (already in .env):
-  GOOGLE_APPLICATION_CREDENTIALS — path to service account JSON
-  BQ_PROJECT_ID                  — GCP project id, e.g. "apac-01072016"
-  BQ_DATASET                     — dataset name, default "invoice_intel"
-"""
-
 import io
 import json
 import logging
@@ -35,13 +8,10 @@ logger = logging.getLogger(__name__)
 _BQ_PROJECT = os.environ.get("BQ_PROJECT_ID", "")
 _BQ_DATASET = os.environ.get("BQ_DATASET", "invoice_intel")
 _TABLE_ID = "line_items_flat"
-
-# Schema matches bigquery_sync.py exactly so the table definition is compatible
-# whether rows came from the manual script or from the live app.
 _BQ_SCHEMA = [
     ("line_item_id",          "STRING"),
     ("invoice_id",            "STRING"),
-    ("org_id",                "STRING"),   # added vs old script — needed for multi-org analytics
+    ("org_id",                "STRING"),   
     ("hsn_code",              "STRING"),
     ("amount",                "FLOAT"),
     ("business_use_percent",  "FLOAT"),
@@ -109,14 +79,10 @@ def stream_line_items(rows: list[dict]) -> None:
         return
     try:
         from google.cloud import bigquery
-
         client = _get_client()
         if client is None:
             return
-
         table_ref = _ensure_table(client)
-
-        # Sandbox-safe batch load via in-memory NDJSON
         buf = io.StringIO()
         field_names = {name for name, _ in _BQ_SCHEMA}
         for row in rows:
@@ -124,9 +90,6 @@ def stream_line_items(rows: list[dict]) -> None:
             for k, v in row.items():
                 if k not in field_names:
                     continue
-                # Bug 20 fix: UUID objects must be str before BQ accepts them.
-                # Bug 21 fix: org_id is included in _BQ_SCHEMA and must be str.
-                # isoformat() handles date/datetime; str() handles UUID and other types.
                 if v is None:
                     clean[k] = None
                 elif hasattr(v, "isoformat"):
@@ -138,11 +101,11 @@ def stream_line_items(rows: list[dict]) -> None:
 
         job_config = bigquery.LoadJobConfig(
             schema=[bigquery.SchemaField(n, t) for n, t in _BQ_SCHEMA],
-            write_disposition="WRITE_APPEND",  # append per-sync, not full truncate
+            write_disposition="WRITE_APPEND",  
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         )
         job = client.load_table_from_file(buf, table_ref, job_config=job_config)
-        job.result()  # blocks ~1-3s for small batches — acceptable for sync flow
+        job.result()  
         logger.info("BQ: appended %d line item rows", len(rows))
 
     except Exception as exc:

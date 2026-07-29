@@ -3,7 +3,6 @@ __pycache__/
 *.pyc
 webapp/frontend/node_modules/
 webapp/frontend/dist/
-gdrive_key.json
 scripts/
 sql/
 benchmark/

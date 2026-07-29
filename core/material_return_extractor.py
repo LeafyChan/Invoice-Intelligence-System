@@ -1,11 +1,10 @@
-"""material_return_extractor.py — Material Return Note extraction (Session 17)"""
 from __future__ import annotations
 import json, re, sys, os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import ocr_engine  # noqa: E402
-import extractor   # noqa: E402
+import ocr_engine  
+import extractor   
 
 
 def _run_ocr(file_path: str) -> str:
@@ -80,7 +79,7 @@ def _parse_and_normalise(raw: str) -> dict:
 
 
 def _normalise(data: dict) -> dict:
-    # Normalise return_reason
+    
     reason = data.get("return_reason", "")
     if reason not in VALID_REASONS:
         lower = reason.lower()
@@ -90,7 +89,7 @@ def _normalise(data: dict) -> dict:
         elif "transit" in lower or "damage" in lower:    data["return_reason"] = "Damaged in Transit"
         elif "quality" in lower:                          data["return_reason"] = "Quality Rejection"
 
-    # Auto-compute total
+    
     items = data.get("line_items", [])
     if items and not data.get("total_quantity_returned"):
         data["total_quantity_returned"] = sum(float(i.get("quantity_returned", 0) or 0) for i in items)

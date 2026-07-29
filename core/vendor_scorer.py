@@ -1,4 +1,3 @@
-"""vendor_scorer.py — Vendor grading engine (Session 17, patched S21)"""
 from __future__ import annotations
 from datetime import datetime, timedelta
 from sqlalchemy import text
@@ -15,15 +14,12 @@ def _grade(score: float) -> str:
 def compute_vendor_score(vendor_id: str, db: Session, org_id: str) -> dict:
     now = datetime.utcnow()
     cutoff_90 = (now - timedelta(days=90)).date().isoformat()
-
-    # Get vendor_gstin to use as the join key
     vrow = db.execute(text("""
         SELECT vendor_gstin FROM vendors
         WHERE org_id = CAST(:org AS UUID) AND vendor_id = CAST(:vid AS UUID)
     """), {"org": org_id, "vid": vendor_id}).mappings().fetchone()
 
     if not vrow or not vrow["vendor_gstin"]:
-        # No GSTIN — score with defaults
         gstin = None
     else:
         gstin = vrow["vendor_gstin"]
@@ -40,8 +36,6 @@ def compute_vendor_score(vendor_id: str, db: Session, org_id: str) -> dict:
             "total_invoices": 0, "total_grns": 0, "total_returns": 0,
             "flags": {},
         }
-
-    # ── Quality rate ─────────────────────────────────────────
     grn_row = db.execute(text("""
         SELECT COALESCE(SUM(total_quantity_received), 0) AS total_recv
         FROM grn
@@ -63,8 +57,6 @@ def compute_vendor_score(vendor_id: str, db: Session, org_id: str) -> dict:
     ), p).scalar() or 0
 
     quality_rate = max(0.0, min(1.0, (1 - total_returned / total_recv) if total_recv > 0 else 1.0))
-
-    # ── On-time delivery ─────────────────────────────────────
     ot_row = db.execute(text("""
         SELECT COUNT(*) FILTER (WHERE i.invoice_date <= po.delivery_date_requested) AS on_time,
                COUNT(*) AS total
@@ -75,8 +67,6 @@ def compute_vendor_score(vendor_id: str, db: Session, org_id: str) -> dict:
           AND po.delivery_date_requested IS NOT NULL
     """), p).mappings().fetchone()
     on_time_rate = (float(ot_row["on_time"]) / float(ot_row["total"])) if ot_row["total"] else 1.0
-
-    # ── Invoice accuracy ─────────────────────────────────────
     acc_row = db.execute(text("""
         SELECT COUNT(*) FILTER (WHERE status NOT IN ('WARNING','FAILED')) AS clean,
                COUNT(*) AS total
@@ -85,8 +75,6 @@ def compute_vendor_score(vendor_id: str, db: Session, org_id: str) -> dict:
     """), p).mappings().fetchone()
     accuracy_rate  = (float(acc_row["clean"]) / float(acc_row["total"])) if acc_row["total"] else 1.0
     total_invoices = int(acc_row["total"] or 0)
-
-    # ── Transport compliance ──────────────────────────────────
     tc_row = db.execute(text("""
         SELECT COUNT(*) FILTER (
                    WHERE LOWER(po.requested_transport_mode) = LOWER(w.transport_mode_label)
@@ -98,8 +86,6 @@ def compute_vendor_score(vendor_id: str, db: Session, org_id: str) -> dict:
         WHERE i.vendor_gstin = :gstin
     """), p).mappings().fetchone()
     transport_compliance_rate = (float(tc_row["compliant"]) / float(tc_row["total"])) if tc_row["total"] else 1.0
-
-    # ── Avg advance % ─────────────────────────────────────────
     adv_row = db.execute(text("""
         SELECT COALESCE(AVG(advance_payment_percent), 0) AS avg_adv
         FROM purchase_orders
@@ -108,8 +94,6 @@ def compute_vendor_score(vendor_id: str, db: Session, org_id: str) -> dict:
           AND advance_payment_percent IS NOT NULL
     """), p).mappings().fetchone()
     avg_advance_pct = float(adv_row["avg_adv"] or 0)
-
-    # ── Score ─────────────────────────────────────────────────
     score = (
         quality_rate              * 35 +
         on_time_rate              * 20 +
@@ -117,8 +101,6 @@ def compute_vendor_score(vendor_id: str, db: Session, org_id: str) -> dict:
         transport_compliance_rate * 15 +
         max(0, 1 - avg_advance_pct / 100) * 10
     )
-
-    # ── Critical overrides ────────────────────────────────────
     flags = {}
     rej_90 = db.execute(text("""
         SELECT COALESCE(SUM(total_quantity_received),0) AS recv,
@@ -137,7 +119,6 @@ def compute_vendor_score(vendor_id: str, db: Session, org_id: str) -> dict:
         flags["advance_risk"] = True
 
     grade = _grade(score)
-
     return {
         "org_id": org_id, "vendor_id": vendor_id,
         "score": round(score, 2), "grade": grade,

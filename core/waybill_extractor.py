@@ -1,4 +1,3 @@
-"""waybill_extractor.py — E-Waybill OCR + LLM extraction (Session 17)"""
 from __future__ import annotations
 import json, re, sys, os
 from pathlib import Path
@@ -10,8 +9,8 @@ except ImportError:
     _HAS_JSON_REPAIR = False
 
 sys.path.insert(0, str(Path(__file__).parent))
-import ocr_engine  # noqa: E402
-import extractor   # noqa: E402
+import ocr_engine  
+import extractor   
 
 def _run_ocr(file_path: str) -> str:
     pages = ocr_engine.read_pdf(file_path)
@@ -62,7 +61,6 @@ def extract_waybill(file_path: str, org_id: str) -> dict:
     groq_key_present = bool(os.environ.get("GROQ_API_KEY"))
     if groq_key_present:
         try:
-            # Pass user_msg as raw_text — field list already in SYSTEM_PROMPT so SCHEMA=None
             raw_json = extractor._call_with_retry(
                 "groq", extractor._call_groq_text, SYSTEM_PROMPT, user_msg, None)
             if isinstance(raw_json, dict):
@@ -92,14 +90,11 @@ def _parse_and_normalise_dict(data: dict) -> dict:
 def _parse_and_normalise(raw: str) -> dict:
     clean = re.sub(r"```(?:json)?|```", "", raw).strip()
 
-    # Fast path
     try:
         data = json.loads(clean)
         return _normalise(data)
     except json.JSONDecodeError:
         pass
-
-    # Repair path
     if _HAS_JSON_REPAIR:
         try:
             repaired = _json_repair.repair_json(clean, return_objects=True)
@@ -108,12 +103,10 @@ def _parse_and_normalise(raw: str) -> dict:
                 return _normalise(repaired)
         except Exception as repair_err:
             print(f"   [waybill_extractor] json_repair failed: {repair_err}", file=sys.stderr)
-
     return {"_parse_error": raw}
 
 
 def _normalise(data: dict) -> dict:
-    # Normalise transport_mode
     tm = str(data.get("transport_mode", "")).lower()
     if tm in TRANSPORT_MODE_MAP:
         data["transport_mode_label"] = TRANSPORT_MODE_MAP[tm]
@@ -122,8 +115,6 @@ def _normalise(data: dict) -> dict:
         except ValueError:
             reverse = {"road": 1, "rail": 2, "air": 3, "ship": 4}
             data["transport_mode"] = reverse.get(tm)
-
-    # Coerce numerics
     for f in ("consignment_value", "quantity", "distance_km",
               "cgst_rate", "sgst_rate", "igst_rate"):
         if f in data and data[f] is not None:

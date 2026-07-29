@@ -1,32 +1,12 @@
-/**
- * Settings.jsx
- * ============
- * Org settings page.
- *
- * Session 15: Extended to support 3 Drive folder types via PUT/GET
- * /org/drive-folders (multi-folder API). Each folder type has its own
- * input, save button, and sync button. The legacy single-folder invoices
- * endpoint still works — this page now uses the new multi-folder API for
- * all three, which auto-backfills the old invoices folder on the backend.
- *
- * Props:
- *   getToken — async () => string, from Clerk's useAuth()
- */
-
 import { useState, useEffect } from "react";
 import { useOrganization } from "@clerk/clerk-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";
-
-// ── Drive folder section ──────────────────────────────────────────────────────
-
 function FolderRow({ label, hint, folderType, currentId, onSaved, authedFetch, syncPath, syncLabel }) {
   const [input, setInput]     = useState(currentId || "");
   const [saving, setSaving]   = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg]         = useState(null);
-
-  // Sync input when parent loads the current value
   useEffect(() => { setInput(currentId || ""); }, [currentId]);
 
   async function handleSave() {
@@ -106,12 +86,8 @@ function FolderRow({ label, hint, folderType, currentId, onSaved, authedFetch, s
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export default function Settings({ getToken }) {
   const [loading, setLoading] = useState(true);
-
-  // Folder IDs keyed by folder_type
   const [folders, setFolders] = useState({
     invoices: null,
     purchase_orders: null,
@@ -119,8 +95,6 @@ export default function Settings({ getToken }) {
     grn: null,
     material_return: null,
   });
-
-  // Business description + HSN profile state (unchanged from original)
   const [bizDesc, setBizDesc]               = useState("");
   const [bizDescSaved, setBizDescSaved]     = useState("");
   const [bizDescSaving, setBizDescSaving]   = useState(false);
@@ -135,15 +109,11 @@ export default function Settings({ getToken }) {
   const [manualDesc, setManualDesc]         = useState("");
   const [manualAdding, setManualAdding]     = useState(false);
   const [removingCode, setRemovingCode]     = useState(null);
-  // Issue 12: delete org
   const { organization } = useOrganization();
   const [deleteOrgName, setDeleteOrgName]   = useState("");
   const [deletingOrg, setDeletingOrg]       = useState(false);
   const [deleteOrgMsg, setDeleteOrgMsg]     = useState(null);
-
-  // Issue 8: outward supply HSN codes (what the business *sells*)
-  // Stored separately from the vendor-profile HSN codes generated from invoices.
-  const [outwardHsn, setOutwardHsn]               = useState([]);      // [{code, description}]
+  const [outwardHsn, setOutwardHsn]               = useState([]);
   const [outwardHsnInput, setOutwardHsnInput]     = useState("");
   const [outwardHsnDesc, setOutwardHsnDesc]       = useState("");
   const [outwardHsnAdding, setOutwardHsnAdding]   = useState(false);
@@ -153,11 +123,8 @@ export default function Settings({ getToken }) {
     if (!organization || deleteOrgName !== organization.name) return;
     setDeletingOrg(true); setDeleteOrgMsg(null);
     try {
-      // 1. Cascade delete all org data from backend
       await authedFetch("/org/delete", { method: "DELETE" });
-      // 2. Destroy the Clerk org (removes membership, redirects on completion)
       await organization.destroy();
-      // Redirect handled by Clerk post-destroy
     } catch (e) {
       setDeleteOrgMsg(`Delete failed: ${e.message}`);
       setDeletingOrg(false);
@@ -205,17 +172,14 @@ export default function Settings({ getToken }) {
   }
 
   useEffect(() => {
-    // Call getToken directly to avoid stale closure over authedFetch
     const load = async () => {
       try {
         const tok = await getToken();
         const h = { Authorization: `Bearer ${tok}` };
-
-        // Folders — handle both {invoices: {folder_id}} and {folders: {invoices: {folder_id}}}
         const fd = await fetch(`${API_BASE}/org/drive-folders`, { headers: h })
           .then(r => r.ok ? r.json() : null).catch(() => null);
         if (fd) {
-          const src = fd.folders ?? fd; // handle either shape
+          const src = fd.folders ?? fd;
           setFolders({
             invoices:        src.invoices?.folder_id        || null,
             purchase_orders: src.purchase_orders?.folder_id || null,
@@ -224,21 +188,15 @@ export default function Settings({ getToken }) {
             material_return: src.material_return?.folder_id || null,
           });
         }
-
-        // Settings
         const sd = await fetch(`${API_BASE}/org/settings`, { headers: h })
           .then(r => r.ok ? r.json() : null).catch(() => null);
         if (sd?.business_description) {
           setBizDesc(sd.business_description);
           setBizDescSaved(sd.business_description);
         }
-
-        // HSN profile (vendor purchase profile — what vendors supply TO us)
         const hd = await fetch(`${API_BASE}/org/hsn-profile`, { headers: h })
           .then(r => r.ok ? r.json() : null).catch(() => null);
         if (hd?.has_profile) setHsnProfile(hd);
-
-        // Issue 8: outward supply HSN codes (what WE sell)
         const od = await fetch(`${API_BASE}/org/outward-hsn`, { headers: h })
           .then(r => r.ok ? r.json() : null).catch(() => null);
         if (Array.isArray(od?.codes)) setOutwardHsn(od.codes);
@@ -247,8 +205,7 @@ export default function Settings({ getToken }) {
       }
     };
     load();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
+  }, []);
   function handleFolderSaved(type, id) {
     setFolders(prev => ({ ...prev, [type]: id }));
   }

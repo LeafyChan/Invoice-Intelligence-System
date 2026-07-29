@@ -1,21 +1,7 @@
-"""
-invoice_store.py (S19 — upsert-on-blank, placeholder support)
-==============================================================
-Changes from S18:
-- ON CONFLICT now does a conditional UPDATE when the existing row is blank
-  (vendor_name IS NULL or status IN PLACEHOLDER/FAILED). This allows rescan
-  to overwrite failed extractions without needing to delete rows first.
-- save_placeholder_invoice() — creates a minimal invoice row from a PO/waybill/GRN
-  reference when no matching invoice exists yet.
-- is_already_processed() now returns False for blank rows so they get retried.
-"""
-
 import json
 from datetime import datetime
-
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-
 
 def _parse_date(val) -> str | None:
     if not val:
@@ -84,14 +70,6 @@ def _get_or_create_vendor(db: Session, org_id: str, vendor_name, vendor_gstin, i
 
 def save_invoice_row(db: Session, org_id: str, row: dict, source_type: str = "upload",
                       storage_path: str = None) -> str | None:
-    """
-    Saves one processed-page row into org-scoped invoices/vendors/line_items tables.
-    Returns invoice_id, or None if skipped (already saved and not blank).
-
-    ON CONFLICT behaviour (S19):
-    - If existing row has vendor_name (was successfully extracted) → DO NOTHING (skip)
-    - If existing row is blank/PLACEHOLDER/FAILED → UPDATE all fields (enables rescan)
-    """
     invoice_date = _parse_date(row.get("invoice_date"))
     vendor_id = _get_or_create_vendor(
         db, org_id, row.get("vendor_name"), row.get("vendor_gstin"), invoice_date)
@@ -202,12 +180,9 @@ def save_invoice_row(db: Session, org_id: str, row: dict, source_type: str = "up
     )
     invoice_id_raw = result.scalar()
     if invoice_id_raw is None:
-        # Row already exists and was successfully extracted — skip silently
         db.rollback()
         return None
     invoice_id = str(invoice_id_raw)
-
-    # Delete old line items if this was a rescan of an existing row
     db.execute(text("DELETE FROM line_items WHERE invoice_id = :iid"), {"iid": invoice_id})
 
     for item in line_items:
@@ -251,7 +226,6 @@ def save_placeholder_invoice(db: Session, org_id: str, po_number: str = None,
     """
     if not po_number and not invoice_number:
         return None
-    # Check if a real or placeholder invoice already exists for this PO/invoice_number
     existing = db.execute(
         text("SELECT invoice_id FROM invoices WHERE org_id = CAST(:oid AS uuid) AND ("
              "  (:po IS NOT NULL AND po_number = :po) OR "

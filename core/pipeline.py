@@ -1,27 +1,3 @@
-"""
-pipeline.py
-===========
-Orchestrates the full flow for invoice PDFs, from two possible sources:
-
-  LOCAL FOLDER:
-    PDF -> ocr_engine.read_pdf() -> extractor.extract_from_*() ->
-    validator.validate_invoice() -> rows -> CSV  (run_pipeline, unchanged
-    behavior - still useful for quick local testing without Drive set up)
-
-  GOOGLE DRIVE (polling):
-    drive_connector.list_new_files() -> download -> same OCR/extract/validate
-    steps -> database.save_invoice_row()  (run_drive_poll)
-
-Both paths share process_single_pdf() for the actual OCR/extraction/
-validation work - only the input source and output destination differ.
-
-Run (local folder, CSV output - original behavior):
-    python core/pipeline.py /path/to/invoices_folder /path/to/output.csv
-
-Run (Drive folder, polls continuously, writes to SQLite):
-    python core/pipeline.py --drive-poll <drive_folder_id> [--interval 300]
-"""
-
 import json
 import sys
 import time
@@ -43,10 +19,6 @@ def load_schema(schema_path: str) -> dict:
 
 
 def process_single_pdf(pdf_path: Path, schema: dict, drive_file_id: str = None) -> list[dict]:
-    """A PDF can have multiple pages; each page becomes one row (most invoices
-    are 1 page, but this keeps multi-page invoices and statements working).
-    drive_file_id, when provided, is carried through to the output row so
-    database.py can use it as the dedup key for the Drive polling path."""
     rows = []
     try:
         pages = ocr_engine.read_pdf(str(pdf_path))
@@ -80,7 +52,6 @@ def process_single_pdf(pdf_path: Path, schema: dict, drive_file_id: str = None) 
             "status": result["status"],
             "issues": "; ".join(result["issues"]) if result["issues"] else "",
         }
-        # flatten extracted fields (skip list-type ones for the CSV, keep as JSON string)
         for k, v in extracted.items():
             if k == "_extraction_note":
                 continue
@@ -115,10 +86,6 @@ def run_pipeline(input_folder: str, output_csv: str, schema_path: str = None) ->
 
 
 def _run_one_drive_cycle(folder_id: str, schema: dict, db_path: str, download_dir: str) -> int:
-    """One poll cycle: list new files, download+process+save each, return
-    count processed. Each file is saved to the database immediately after
-    processing (not batched at the end) so a crash partway through a large
-    batch doesn't lose already-completed work."""
     new_files = drive_connector.list_new_files(folder_id, db_path)
     if not new_files:
         return 0
@@ -141,9 +108,6 @@ def _run_one_drive_cycle(folder_id: str, schema: dict, db_path: str, download_di
                       f"conf={row['confidence']:>5} -> {row['status']} "
                       f"(saved as invoice_id={invoice_id})")
             except Exception as e:
-                # Multi-page files: if page 1 already saved with this
-                # drive_file_id, a later page hitting the UNIQUE constraint
-                # would otherwise silently lose data - print loudly instead.
                 print(f"   [DB save failed for page {row.get('page')}] {e}")
         processed += 1
     return processed
@@ -152,16 +116,6 @@ def _run_one_drive_cycle(folder_id: str, schema: dict, db_path: str, download_di
 def run_drive_poll(folder_id: str, interval_seconds: int = 300,
                     schema_path: str = None, db_path: str = None,
                     download_dir: str = None, once: bool = False):
-    """
-    Polls the given Drive folder every interval_seconds for new files,
-    processing and saving each to the SQLite database. This is the practical
-    version of "automatic" without deploying a public webhook endpoint -
-    Drive push notifications require a publicly reachable HTTPS callback,
-    which a script running on a personal machine doesn't have.
-
-    once=True runs a single cycle and returns - useful for testing or for
-    wiring into cron/Task Scheduler instead of this function's own loop.
-    """
     schema_path = schema_path or str(Path(__file__).parent.parent / "config" / "invoice_schema.json")
     schema = load_schema(schema_path)
     db_path = db_path or str(Path(__file__).parent.parent / "output" / "invoices.db")
@@ -178,8 +132,6 @@ def run_drive_poll(folder_id: str, interval_seconds: int = 300,
             if count == 0:
                 print("No new files this cycle.")
         except Exception as e:
-            # A bad cycle (e.g. Drive API hiccup) shouldn't kill the whole
-            # poller - log it and try again next interval.
             print(f"[poll cycle error] {e}")
 
         if once:

@@ -1,25 +1,3 @@
-/**
- * ItcSummary.jsx
- * ==============
- * Shows total claimable ITC across all invoices, broken down by vendor and
- * by HSN-profile status (expected / ambiguous / manual / unknown), plus an
- * explicit list of line items flagged ambiguous so the total isn't just a
- * number with no way to see what's driving any one slice of it.
- *
- * Backed by GET /itc-summary (see PROJECT_LOG.md Phase 6.5). The endpoint
- * computes claimable amount as line_tax x (business_use_percent / 100):
- *   - line_tax uses the line's own printed rate (line_tax_rate_percent)
- *     when one exists, otherwise apportions the invoice's bill-level
- *     total_gst_amount by this line's share of taxable_amount.
- *   - business_use_percent defaults to 100 (fully business use) and is
- *     edited per line on the invoice detail view for any item with a
- *     personal/mixed-use portion - this view surfaces the resulting total,
- *     it doesn't decide that percentage itself.
- *
- * Props:
- *   getToken — async () => string, from Clerk's useAuth()
- */
-
 import { useState, useEffect, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";

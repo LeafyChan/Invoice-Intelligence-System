@@ -1,4 +1,3 @@
-# secrets & keys
 gdrive_key.json
 bq_service_account.json
 .env
@@ -6,24 +5,18 @@ bq_service_account.json
 .env*.local
 cloudrun.env
 start_app.sh
-
-# python
 venv/
 **/__pycache__/
 *.pyc
-
-# node
 **/node_modules/
 **/dist/
-
-# output / test
 /output/
 output/
 test_data/
 Log.md
-
-# editor
 .claude/settings.local.json
 Learning.md
 Deployment.md
 dev.sh
+shorthands.md
+RUNTHIS

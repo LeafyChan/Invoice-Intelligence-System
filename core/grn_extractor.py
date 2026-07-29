@@ -1,4 +1,3 @@
-"""grn_extractor.py — Goods Receipt Note extraction (Session 17)"""
 from __future__ import annotations
 import json, re, sys, os
 from pathlib import Path
@@ -10,8 +9,8 @@ except ImportError:
     _HAS_JSON_REPAIR = False
 
 sys.path.insert(0, str(Path(__file__).parent))
-import ocr_engine  # noqa: E402
-import extractor   # noqa: E402
+import ocr_engine  
+import extractor   
 
 
 def _run_ocr(file_path: str) -> str:
@@ -68,18 +67,11 @@ def _parse_and_normalise_dict(data: dict) -> dict:
 
 def _parse_and_normalise(raw: str) -> dict:
     clean = re.sub(r"```(?:json)?|```", "", raw).strip()
-
-    # Fast path — valid JSON
     try:
         data = json.loads(clean)
         return _normalise(data)
     except json.JSONDecodeError as first_err:
         pass
-
-    # Repair path — handles Groq's common failure modes:
-    #   • missing closing brace on a line_items element
-    #   • orphaned keys after a prematurely closed array
-    #   • trailing comma before ]
     if _HAS_JSON_REPAIR:
         try:
             repaired = _json_repair.repair_json(clean, return_objects=True)
@@ -99,13 +91,6 @@ def _parse_and_normalise(raw: str) -> dict:
 
 
 def _salvage_line_items(raw: str) -> dict | None:
-    """
-    Last-resort repair: the model sometimes emits a valid header block and
-    then corrupts the line_items array (missing brace, orphaned keys).
-    This function extracts the header fields and whatever complete item
-    objects it can find, then reassembles a valid dict.
-    """
-    # Pull out individual {...} objects that look like line items
     item_pattern = re.compile(
         r'\{[^{}]*"item_number"\s*:\s*\d+[^{}]*\}', re.DOTALL
     )
@@ -118,8 +103,6 @@ def _salvage_line_items(raw: str) -> dict | None:
 
     if not items:
         return None
-
-    # Try to parse header fields by truncating at line_items
     header: dict = {}
     header_match = re.search(r'^(\{.*?)"line_items"\s*:', raw, re.DOTALL)
     if header_match:
@@ -131,17 +114,13 @@ def _salvage_line_items(raw: str) -> dict | None:
     header["line_items"] = items
     return header
 
-
 def _normalise(data: dict) -> dict:
-    # Auto-compute totals from line items if missing
     items = data.get("line_items", [])
     if items and not data.get("total_quantity_received"):
         data["total_quantity_ordered"]  = sum(float(i.get("quantity_ordered",  0) or 0) for i in items)
         data["total_quantity_received"] = sum(float(i.get("quantity_received", 0) or 0) for i in items)
         data["total_quantity_rejected"] = sum(float(i.get("quantity_rejected", 0) or 0) for i in items)
         data["total_quantity_accepted"] = sum(float(i.get("quantity_accepted", 0) or 0) for i in items)
-
-    # Ensure quantity_accepted on each line item
     for item in items:
         if item.get("quantity_accepted") is None:
             recv = float(item.get("quantity_received", 0) or 0)

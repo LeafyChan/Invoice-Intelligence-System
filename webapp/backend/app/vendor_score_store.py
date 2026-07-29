@@ -1,5 +1,3 @@
-"""vendor_score_store.py — Upsert + retrieve vendor scores (Session 17)"""
-
 from __future__ import annotations
 import json
 import sys
@@ -7,15 +5,11 @@ from pathlib import Path
 from sqlalchemy import text
 from .db import get_org_scoped_db
 
-# Import scorer from core pipeline
 import os as _os
 sys.path.insert(0, _os.environ.get("CORE_PIPELINE_PATH", str(Path(__file__).parents[1])))
 from core.vendor_scorer import compute_vendor_score
 
 def recalculate_and_store(org_id: str, vendor_id: str) -> dict:
-    """Compute score and upsert into vendor_scores. Returns the score dict."""
-    # compute_vendor_score needs a db connection — open one for the scorer,
-    # then reuse the same session for the upsert so RLS stays set.
     with get_org_scoped_db(org_id) as db:
         result = compute_vendor_score(vendor_id=vendor_id, db=db, org_id=org_id)
         db.execute(text("""

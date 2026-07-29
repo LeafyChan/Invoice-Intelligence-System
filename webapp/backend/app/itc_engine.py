@@ -1,11 +1,3 @@
-"""
-itc_engine.py — added 'excluded' confidence filtering
-
-Change: rows where hsn_status = 'excluded' are dropped before any
-computation. A blacklisted HSN code must never contribute claimable ITC
-regardless of amount or business_use_percent.
-"""
-
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,7 +18,7 @@ try:
 except Exception as _e:
     logger.info("itc_engine: cudf not available (%s), using CPU pandas", _e)
 
-import pandas as pd  # noqa: E402
+import pandas as pd  
 
 
 def compute_itc_summary(rows: list[dict]) -> dict:
@@ -42,10 +34,7 @@ def compute_itc_summary(rows: list[dict]) -> dict:
             "accelerated": _GPU_AVAILABLE,
         }
 
-    df = pd.DataFrame(rows)
-
-    # ── Separate excluded lines BEFORE any ITC computation ─────────────────
-    # Blacklisted HSN codes must never contribute claimable ITC.
+    df = pd.DataFrame(rows)    
     excluded_mask = df["hsn_status"] == "excluded"
     excluded_df = df[excluded_mask].copy()
     df = df[~excluded_mask].copy()
@@ -93,8 +82,6 @@ def compute_itc_summary(rows: list[dict]) -> dict:
         ]
     else:
         ambiguous_lines = []
-
-    # Summary of excluded lines for the UI to show (informational only)
     excluded_lines = []
     if len(excluded_df) > 0:
         for r in excluded_df[["invoice_id", "hsn_code", "vendor_name"]].to_dict("records"):

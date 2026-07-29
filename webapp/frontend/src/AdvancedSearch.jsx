@@ -1,33 +1,3 @@
-// AdvancedSearch.jsx
-// Drop-in search panel for InvoiceList.jsx.
-// Usage: import AdvancedSearch from "./AdvancedSearch";
-//        <AdvancedSearch onSearch={handleAdvancedSearch} onClear={handleClearSearch} />
-//
-// onSearch(filters) fires with a filters object:
-// {
-//   search: "",           // vendor name / invoice no / PO no (existing)
-//   vendor_gstin: "",
-//   invoice_number: "",
-//   po_number: "",
-//   mrn_number: "",
-//   grn_number: "",
-//   waybill_number: "",
-//   status: "",
-//   amount_min: null,
-//   amount_max: null,
-//   date_from: "",        // YYYY-MM-DD
-//   date_to: "",
-//   date_preset: "",      // "today"|"week"|"month"|"quarter"|"year"|""
-//   paid: null,           // true|false|null
-//   overdue_only: false,
-// }
-//
-// The parent (InvoiceList) passes these into its existing GET /invoices query params.
-// Fields the backend already supports: search, vendor_gstin, po_number, status, paid, overdue_only,
-// date filters (add date_from/date_to to the GET /invoices query — see backend note below).
-// Fields resolved client-side (filter after fetch): invoice_number, mrn_number, grn_number,
-// waybill_number, amount_min, amount_max (since these aren't backend query params yet).
-
 import { useState, useRef, useEffect } from "react";
 
 const PRESETS = [
@@ -120,7 +90,6 @@ export default function AdvancedSearch({ onSearch, onClear }) {
   function handleSearch(e) {
     e?.preventDefault();
     const out = { ...f };
-    // Coerce types
     if (out.amount_min) out.amount_min = parseFloat(out.amount_min) || null;
     else out.amount_min = null;
     if (out.amount_max) out.amount_max = parseFloat(out.amount_max) || null;
@@ -137,8 +106,6 @@ export default function AdvancedSearch({ onSearch, onClear }) {
   }
 
   const count = activeCount(f);
-
-  // Close panel on Escape
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape" && open) setOpen(false); }
     document.addEventListener("keydown", onKey);

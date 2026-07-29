@@ -1,33 +1,3 @@
-"""
-supply_chain_reconciliation.py
-================================
-Cross-document validation for the 5-document supply chain.
-
-Chain: PO → Invoice → Waybill → GRN → Material Return
-
-All 10 checks — renamed for clarity, grouped by domain:
-
-DOCUMENT LINKAGE (no token cost — pure DB join checks)
-  1. orphan_waybill          — waybill references invoice that doesn't exist
-  2. transport_mode_mismatch — PO requested mode ≠ waybill actual mode
-  3. missing_waybill         — invoice has no waybill after 7 days
-  4. missing_grn             — waybill has no GRN after 14 days
-
-DELIVERY INTEGRITY
-  5. expired_waybill         — e-waybill validity lapsed before GRN received
-  6. quantity_discrepancy    — GRN received qty differs from PO ordered by >2%
-  7. quality_rejection       — GRN rejection rate >5%
-
-RETURNS & REVERSALS
-  8. goods_returned          — any MRN exists for this supply chain leg
-
-INCOTERMS COMPLIANCE (no LLM calls — uses extracted PO incoterm field)
-  9. incoterm_transport_clash  — sea incoterm (FOB/CIF/CFR/FAS) but road/air used
- 10. buyer_risk_uninsured      — buyer-risk incoterm with no insurance confirmation
-
-All checks use already-fetched DB dicts. Zero LLM calls. Zero extra DB queries.
-"""
-
 from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -65,15 +35,9 @@ def _exc(exception_type: str, severity: str, invoice_id=None, po_id=None,
         "description": description,
         "status": "open",
     }
-
-
-# Incoterms that imply sea/waterway transport only
 _SEA_INCOTERMS   = {"FOB", "CIF", "CFR", "FAS"}
-# Incoterms that put transport risk on the buyer
 _BUYER_RISK      = {"EXW", "FCA", "FOB", "FAS"}
-# Transport mode labels that are NOT sea
 _NON_SEA_MODES   = {"road", "rail", "air", "courier", "truck", "lorry", "express"}
-
 
 def run_supply_chain_reconciliation(
     invoices: list[dict],
@@ -88,8 +52,6 @@ def run_supply_chain_reconciliation(
     """
     exceptions: list[dict] = []
     today = _today()
-
-    # ── Indexes ───────────────────────────────────────────────────────────────
     inv_by_number  = {i["invoice_number"]: i for i in invoices  if i.get("invoice_number")}
     po_by_number   = {p["po_number"]: p      for p in purchase_orders if p.get("po_number")}
     wb_by_ewb      = {w["ewb_number"]: w     for w in waybills  if w.get("ewb_number")}
@@ -99,10 +61,6 @@ def run_supply_chain_reconciliation(
         if doc and doc not in wb_by_invoice:
             wb_by_invoice[doc] = w
     grn_waybill_nos = {g.get("waybill_number") for g in grns if g.get("waybill_number")}
-
-    # ── 1. orphan_waybill ─────────────────────────────────────────────────────
-    # Waybill document_number points to an invoice that doesn't exist in books.
-    # Signals: duplicate shipment, wrong invoice number on waybill, or fraud.
     for w in waybills:
         doc = w.get("document_number")
         if doc and doc not in inv_by_number:
@@ -113,10 +71,6 @@ def run_supply_chain_reconciliation(
                 description=f"Waybill {w.get('ewb_number')} references invoice "
                             f"'{doc}' which has no matching record",
             ))
-
-    # ── 2. transport_mode_mismatch ────────────────────────────────────────────
-    # PO explicitly requested a transport mode but waybill used a different one.
-    # Signals: vendor bypassed agreed logistics terms — cost or compliance impact.
     for inv in invoices:
         po_no  = inv.get("po_number")
         inv_no = inv.get("invoice_number")
@@ -138,11 +92,6 @@ def run_supply_chain_reconciliation(
                 description=f"PO required '{requested}' transport — "
                             f"waybill used '{actual}'",
             ))
-
-    # ── 3. missing_waybill ────────────────────────────────────────────────────
-    # Invoice older than 7 days with no linked e-waybill.
-    # Signals: goods may have moved without GST compliance — ITC risk.
-    # Guard: only flag invoices that have a po_number (real invoices, not stubs).
     for inv in invoices:
         inv_no = inv.get("invoice_number")
         po_no  = inv.get("po_number")
@@ -158,10 +107,6 @@ def run_supply_chain_reconciliation(
                     description=f"Invoice {inv_no} has no e-waybill after "
                                 f"{(today - inv_date).days} days",
                 ))
-
-    # ── 4. missing_grn ────────────────────────────────────────────────────────
-    # Waybill older than 14 days with no GRN.
-    # Signals: goods may not have been received or receipt wasn't recorded.
     for w in waybills:
         ewb = w.get("ewb_number")
         if ewb and ewb not in grn_waybill_nos:
@@ -174,10 +119,6 @@ def run_supply_chain_reconciliation(
                     description=f"Waybill {ewb} dispatched {ewb_date} — "
                                 f"no GRN after {(today - ewb_date).days} days",
                 ))
-
-    # ── 5. expired_waybill ────────────────────────────────────────────────────
-    # GRN receipt date is after the e-waybill's validity expiry.
-    # Signals: legally invalid movement — penalty risk under GST e-way bill rules.
     for g in grns:
         wb_no = g.get("waybill_number")
         if not wb_no:
@@ -197,10 +138,6 @@ def run_supply_chain_reconciliation(
                 description=f"Waybill {wb_no} expired {valid_until} — "
                             f"goods received {days_over} day(s) late on {grn_date}",
             ))
-
-    # ── 6. quantity_discrepancy ───────────────────────────────────────────────
-    # GRN received qty differs from PO ordered qty by more than 2%.
-    # Signals: short delivery (pay dispute) or over-delivery (unwanted liability).
     for g in grns:
         ordered  = g.get("total_quantity_ordered")
         received = g.get("total_quantity_received")
@@ -222,10 +159,6 @@ def run_supply_chain_reconciliation(
                     description=f"GRN {g.get('grn_number')}: received {received} "
                                 f"vs ordered {ordered} — over by {pct:.1f}%",
                 ))
-
-    # ── 7. quality_rejection ──────────────────────────────────────────────────
-    # GRN rejection rate exceeds 5%.
-    # Signals: vendor quality issue — feeds vendor scorecard penalty.
     for g in grns:
         rej = g.get("rejection_rate_pct")
         if rej is not None and float(rej) > 5:
@@ -236,10 +169,6 @@ def run_supply_chain_reconciliation(
                 description=f"GRN {g.get('grn_number')}: {float(rej):.1f}% rejection rate "
                             f"— exceeds 5% quality threshold",
             ))
-
-    # ── 8. goods_returned ────────────────────────────────────────────────────
-    # Any Material Return Note exists for this leg of the supply chain.
-    # Signals: defective goods, wrong delivery, or contract dispute.
     for mr in material_returns:
         exceptions.append(_exc(
             "goods_returned", "HIGH",
@@ -250,11 +179,6 @@ def run_supply_chain_reconciliation(
                         f"{mr.get('total_quantity_returned')} units returned — "
                         f"reason: {mr.get('return_reason') or 'not specified'}",
         ))
-
-    # ── 9. incoterm_transport_clash ───────────────────────────────────────────
-    # PO incoterm implies sea transport (FOB/CIF/CFR/FAS) but waybill used road/air.
-    # Signals: wrong carrier mode chosen — cost overrun or insurance void.
-    # Uses only already-extracted PO incoterm field. Zero LLM calls.
     for inv in invoices:
         po_no  = inv.get("po_number")
         inv_no = inv.get("invoice_number")
@@ -276,12 +200,6 @@ def run_supply_chain_reconciliation(
                 description=f"PO incoterm {incoterm} requires sea/waterway transport — "
                             f"waybill recorded '{transport}'",
             ))
-
-    # ── 10. buyer_risk_uninsured ──────────────────────────────────────────────
-    # PO incoterm places transport risk on the buyer (EXW/FCA/FOB/FAS)
-    # with no insurance confirmation on file.
-    # Signals: financial exposure if goods are lost/damaged in transit.
-    # Low severity — advisory, not a compliance violation.
     for po in purchase_orders:
         incoterm = (po.get("incoterm") or "").upper()
         if incoterm in _BUYER_RISK:

@@ -1,17 +1,7 @@
-// DocumentVault.jsx
-// Drop-in replacement for Exceptions.jsx.
-// Windows-Explorer-style tree: 5 doc-type folders, each expandable.
-// Every row: click to expand data, ✏️ to edit, link-match badges.
-// Edit drawer: saves via PATCH for all 5 doc types.
-// Link suggestion popup: fires when an edited ref field matches an existing doc.
-
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@clerk/clerk-react";
 
 const API = import.meta.env.VITE_API_BASE || "";
-
-// ── Config ────────────────────────────────────────────────────────────────────
-
 const TYPES = [
   {
     key: "invoices",
@@ -122,8 +112,6 @@ const TYPES = [
     ],
   },
 ];
-
-// Which ref fields on each type should match against which other type's numField
 const LINK_MAP = {
   invoices:        { po_number: ["purchase_orders","po_number"], invoice_number: ["waybills","document_number"] },
   purchase_orders: { po_number: ["invoices","po_number"] },
@@ -131,9 +119,6 @@ const LINK_MAP = {
   grn:             { po_number: ["invoices","po_number"], waybill_number: ["waybills","document_number"] },
   material_returns:{ grn_number: ["grn","grn_number"], po_number: ["invoices","po_number"] },
 };
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function humanKey(k) {
   return k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -159,8 +144,6 @@ function checkLinks(docType, vals, allDocs) {
   return matches;
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-
 const S = {
   wrap:   { fontFamily: "'Inter',system-ui,sans-serif", background: "#F8FAFC", minHeight: "100vh", color: "#111318", display: "flex", flexDirection: "column" },
   header: { background: "#1E3A5F", color: "#fff", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 },
@@ -168,8 +151,6 @@ const S = {
   ghost:  { background: "none", border: "1px solid #D1D5DB", color: "#374151" },
   mono:   { fontFamily: "'JetBrains Mono','Fira Code',monospace" },
 };
-
-// ── Link suggestion toast ─────────────────────────────────────────────────────
 
 function LinkToast({ matches, onDismiss }) {
   if (!matches.length) return null;
@@ -193,8 +174,6 @@ function LinkToast({ matches, onDismiss }) {
   );
 }
 
-// ── Edit drawer ───────────────────────────────────────────────────────────────
-
 function EditDrawer({ doc, typeCfg, allDocs, token, onClose, onSaved }) {
   const [vals, setVals] = useState(() => {
     const o = {};
@@ -204,8 +183,6 @@ function EditDrawer({ doc, typeCfg, allDocs, token, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg]       = useState(null);
   const [linkMatches, setLinkMatches] = useState([]);
-
-  // Recompute link matches on every keystroke — no extra API calls
   useEffect(() => {
     setLinkMatches(checkLinks(typeCfg.key, vals, allDocs));
   }, [vals]);
@@ -293,20 +270,14 @@ function EditDrawer({ doc, typeCfg, allDocs, token, onClose, onSaved }) {
   );
 }
 
-// ── Data row (expandable) ─────────────────────────────────────────────────────
-
 function DocRow({ doc, typeCfg, allDocs, token, onRefresh }) {
   const [open, setOpen]     = useState(false);
   const [editing, setEditing] = useState(false);
-
   const numVal = doc[typeCfg.numField];
-
-  // Compute link status for badge
   const links = LINK_MAP[typeCfg.key] || {};
   const linkEntries = Object.entries(links);
   const linkedCount = linkEntries.filter(([field, linkDef]) => {
     const v = doc[field]; if (!v) return false;
-
     const [targetType, targetField] = linkDef;
     return (allDocs[targetType] || []).some(d => d[targetField] === v);
   }).length;
@@ -318,8 +289,6 @@ function DocRow({ doc, typeCfg, allDocs, token, onRefresh }) {
     : linkEntries.length === 0
     ? { bg: "#F1F5F9", color: "#6B7280" }
     : { bg: "#FEE2E2", color: "#991B1B" };
-
-  // Visible fields for expanded view — skip UUIDs and internal keys
   const SKIP = new Set(["org_id", "drive_file_id", "storage_path", "raw_data", "line_items"]);
   const visibleEntries = Object.entries(doc)
     .filter(([k]) => !SKIP.has(k) && !k.endsWith("_id"))
@@ -413,8 +382,6 @@ function DocRow({ doc, typeCfg, allDocs, token, onRefresh }) {
   );
 }
 
-// ── Folder (collapsible) ──────────────────────────────────────────────────────
-
 function Folder({ typeCfg, allDocs, token, onRefresh }) {
   const docs = allDocs[typeCfg.key] || [];
   const [open, setOpen] = useState(false);
@@ -428,8 +395,6 @@ function Folder({ typeCfg, allDocs, token, onRefresh }) {
         return num.includes(q) || name.includes(q);
       })
     : docs;
-
-  // Folder-level link health summary
   const links = LINK_MAP[typeCfg.key] || {};
   const linkCount = Object.keys(links).length;
   const fullyLinked = linkCount === 0 ? docs.length : docs.filter(doc =>
@@ -514,8 +479,6 @@ function Folder({ typeCfg, allDocs, token, onRefresh }) {
   );
 }
 
-// ── Root ──────────────────────────────────────────────────────────────────────
-
 export default function DocumentVault() {
   const { getToken } = useAuth();
   const [allDocs, setAllDocs]   = useState({});
@@ -538,8 +501,6 @@ export default function DocumentVault() {
       TYPES.forEach((t, i) => {
         const r = results[i];
         if (r.status === "fulfilled" && r.value) {
-          // Invoices/POs return { invoices:[...] } / { purchase_orders:[...] }
-          // Waybills/GRN/MRs return array directly
           const val = r.value;
           map[t.key] = t.listKey ? (val[t.listKey] || []) : (Array.isArray(val) ? val : (val.items || val.results || []));
         } else {

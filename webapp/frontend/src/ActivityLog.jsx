@@ -1,19 +1,3 @@
-/**
- * ActivityLog.jsx
- * ===============
- * Shows a chronological feed of every change made in this org — invoice
- * field edits, line item edits/adds/deletes, and settings changes (Drive
- * folder, business description, HSN profile) — whether made by a human
- * user or by the AI pipeline (e.g. applying a generated HSN profile).
- *
- * Backed by GET /activity-log (filters: entity_type, actor_type, page).
- * Every row already exists server-side via log_activity() calls added
- * alongside each mutating endpoint — this page is purely a read view.
- *
- * Props:
- *   getToken — async () => string, from Clerk's useAuth()
- */
-
 import { useState, useEffect, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";
@@ -62,15 +46,6 @@ function ActorBadge({ actorType }) {
 }
 
 function EntryRow({ entry }) {
-  // NOTE: this used to reference a local `s` alias for `styles`, but `s` is
-  // only ever defined inside the ActivityLog component below — EntryRow is
-  // a separate top-level function and never had its own `s` binding. Every
-  // render of a real entry threw "ReferenceError: s is not defined" inside
-  // this component, and with no error boundary anywhere in the app (see
-  // App.jsx), that exception unmounted the entire React tree — not just
-  // this tab's content, but the top nav too, which is why the whole page
-  // went blank instead of just showing a broken activity list. Fixed by
-  // referencing `styles` directly, the actual module-scope object.
   const meta = ENTITY_META[entry.entity_type] || { label: entry.entity_type, icon: "•" };
   const actionLabel = ACTION_LABEL[entry.action] || entry.action;
   return (

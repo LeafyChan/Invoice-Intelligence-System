@@ -1,26 +1,3 @@
-"""
-drive_connector.py
-===================
-Lists and downloads invoice PDFs/images from a single Google Drive folder,
-using a service account (read-only access, scoped to just the files/folders
-explicitly shared with it - see setup steps in project notes).
-
-Why a service account and not OAuth: this runs unattended in a polling loop
-with nobody present to click through a login screen, and OAuth user tokens
-expire/break on password changes in a way that breaks a long-running
-background job. A service account key doesn't expire and isn't tied to a
-human login.
-
-USAGE:
-    from drive_connector import list_new_files, download_file
-
-    new_files = list_new_files(FOLDER_ID, db_path="output/invoices.db")
-    for f in new_files:
-        local_path = download_file(f["id"], f["name"], dest_dir="invoices")
-        # ... hand local_path to pipeline.process_single_pdf(), passing
-        #     f["id"] through as drive_file_id so database.py can dedup it
-"""
-
 import io
 import os
 import sys
@@ -34,10 +11,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 import database
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-
-# Accepted invoice file types. Google Docs/Sheets natives (no direct binary
-# download) are intentionally excluded - invoices arrive as PDFs or scanned
-# images, never as native Google Workspace files.
 ACCEPTED_MIME_TYPES = {
     "application/pdf",
     "image/jpeg",
@@ -64,15 +37,6 @@ def _get_drive_service():
 
 
 def list_folder_files(folder_id: str, modified_after: str = None) -> list[dict]:
-    """Lists accepted-type files in the given Drive folder, newest first.
-
-    modified_after (optional ISO 8601 string e.g. "2025-01-01T00:00:00Z"):
-      When provided, only files modified after that timestamp are returned —
-      Drive applies this filter server-side so we never fetch metadata for
-      files that can't possibly be new. This is the incremental-sync path
-      for large folders. Without it, all files are listed and dedup happens
-      client-side via is_already_processed (correct but O(n) on folder size).
-    """
     service = _get_drive_service()
     mime_filter = " or ".join(f"mimeType='{m}'" for m in ACCEPTED_MIME_TYPES)
     query = f"'{folder_id}' in parents and ({mime_filter}) and trashed=false"
@@ -97,20 +61,11 @@ def list_folder_files(folder_id: str, modified_after: str = None) -> list[dict]:
 
 
 def list_new_files(folder_id: str, db_path: str = None, modified_after: str = None) -> list[dict]:
-    """Lists files in the folder that aren't already in the database.
-    modified_after is passed through to list_folder_files for server-side
-    filtering — when provided, Drive only returns files newer than that
-    timestamp, so the Python-side dedup check below runs on a much smaller
-    set. The dedup check stays as a safety net for edge cases (e.g. a file
-    modified-time bumped by Drive metadata changes without content change)."""
     all_files = list_folder_files(folder_id, modified_after=modified_after)
     return [f for f in all_files if not database.is_already_processed(f["id"], db_path)]
 
 
 def download_file(file_id: str, file_name: str, dest_dir: str) -> str:
-    """Downloads one file by ID to dest_dir, returns the local path. Existing
-    file with the same name is overwritten - file_id (not file_name) is the
-    real dedup key, this is just where the bytes land for ocr_engine to read."""
     service = _get_drive_service()
     Path(dest_dir).mkdir(parents=True, exist_ok=True)
     local_path = str(Path(dest_dir) / file_name)

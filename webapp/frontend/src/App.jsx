@@ -1,16 +1,3 @@
-/**
- * App.jsx
- * =======
- * Top-level shell. 9 top-level tabs:
- *   Invoices / Vendors /
- *   Exceptions / ITC Summary / Analytics / Activity / Settings
- *
- *
- * S17 additions:
- *   - Vendors tab (VendorScorecard)
- *   - ErrorBoundary key reset on every tab change
- */
-
 import { useState, Component } from "react";
 import { useEffect } from "react";
 import {
@@ -76,8 +63,6 @@ class ErrorBoundary extends Component {
   }
 }
 
-// ── Login page ────────────────────────────────────────────────────────────────
-
 function LoginPage() {
   return (
     <div style={ls.root}>
@@ -134,8 +119,6 @@ const ls = {
   featureDesc:  { fontSize: 12, color: "#6B7280", lineHeight: 1.5 },
 };
 
-// ── Org creation screen ───────────────────────────────────────────────────────
-
 function CreateOrgScreen() {
   return (
     <div style={{ minHeight: "100vh", background: "#F7F8FA", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter, system-ui, sans-serif", flexDirection: "column", gap: 20, padding: 24 }}>
@@ -150,13 +133,6 @@ function CreateOrgScreen() {
   );
 }
 
-
-// ── Top navigation ────────────────────────────────────────────────────────────
-
-// Issue 11: Purchase Orders / Waybills / GRN / Material Returns tabs removed.
-// The full 5-doc chain is navigable from each invoice row (P/W/G/M indicators)
-// and from ReviewModal's tab bar. Vendors tab kept — it's aggregate intelligence,
-// not a standalone doc list.
 const TOP_TABS = [
   { id: "Invoices",    label: "Invoices",    icon: "📄" },
   { id: "Vendors",     label: "Vendors",     icon: "🏭" },
@@ -215,8 +191,6 @@ const ns = {
   tabInactive: { color: "rgba(255,255,255,0.65)", fontWeight: 400 },
 };
 
-// ── App shell ─────────────────────────────────────────────────────────────────
-
 function AppShell() {
   const { getToken }     = useAuth();
   const { organization } = useOrganization();
@@ -225,10 +199,6 @@ function AppShell() {
   });
   const [activeTab, setActiveTab] = useState("Invoices");
 
-  // Issue 5 fix: if the user already has org memberships but no active org
-  // (e.g. returning user, or just logged in fresh), auto-activate the first
-  // membership instead of showing the "create org" screen, which would
-  // create a new orphan org on every login.
   useEffect(() => {
     if (!isLoaded || organization) return;
     const memberships = userMemberships?.data ?? [];
@@ -237,13 +207,11 @@ function AppShell() {
     }
   }, [isLoaded, organization, userMemberships, setActive]);
 
-  // Show the create-org screen only when we're certain there are no memberships.
   const memberships = userMemberships?.data ?? [];
   const noMemberships = isLoaded && memberships.length === 0;
 
   if (!organization) {
     if (!isLoaded || !noMemberships) {
-      // Still loading, or has memberships — useEffect above will activate one.
       return (
         <div style={{ minHeight: "100vh", display: "flex", alignItems: "center",
           justifyContent: "center", background: "#F7F8FA",
@@ -270,8 +238,6 @@ function AppShell() {
     </div>
   );
 }
-
-// ── Root ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
   return (

@@ -1,0 +1,115 @@
+
+════════════════════════════════════════════════════════════════════════════════
+  Invoice Intelligence -- Multi-Org GPU Benchmark (3 strategies)
+  1,000 orgs  x  100,000 rows  =  100,000,000 total  |  RTX 4050
+════════════════════════════════════════════════════════════════════════════════
+
+  [A] pandas sequential...
+    pandas [ 100/1000]    1.21s  ETA  10.9s  10,000,000 rows done
+    pandas [ 200/1000]    2.39s  ETA   9.5s  20,000,000 rows done
+    pandas [ 300/1000]    3.63s  ETA   8.5s  30,000,000 rows done
+    pandas [ 400/1000]    4.83s  ETA   7.2s  40,000,000 rows done
+    pandas [ 500/1000]    6.00s  ETA   6.0s  50,000,000 rows done
+    pandas [ 600/1000]    7.16s  ETA   4.8s  60,000,000 rows done
+    pandas [ 700/1000]    8.32s  ETA   3.6s  70,000,000 rows done
+    pandas [ 800/1000]    9.47s  ETA   2.4s  80,000,000 rows done
+    pandas [ 900/1000]   10.62s  ETA   1.2s  90,000,000 rows done
+    pandas [1000/1000]   11.78s  ETA   0.0s  100,000,000 rows done
+
+————————————————————————————————————————————————————————————————————————————————
+  A) pandas sequential   |   wall-clock: 11.775s
+————————————————————————————————————————————————————————————————————————————————
+   OrgID  Industry             Rows             ITC Total
+       0  Manufacturing     100,000  Rs      1,438,657,570
+       1  Retail            100,000  Rs      1,431,808,562
+       2  IT Services       100,000  Rs      1,440,123,276
+       3  Auto Parts        100,000  Rs      1,436,358,502
+       4  Food Tech         100,000  Rs      1,438,822,716
+        ... 990 orgs not shown ...
+     995  Pharma            100,000  Rs      1,434,456,054
+     996  Logistics         100,000  Rs      1,431,014,787
+     997  FMCG              100,000  Rs      1,432,450,227
+     998  Textile           100,000  Rs      1,436,541,751
+     999  Energy            100,000  Rs      1,420,656,542
+————————————————————————————————————————————————————————————————————————————————
+
+  GPU warm-up (CUDA JIT, not timed)...
+  GPU ready.
+
+  [B] GPU streamed (naive, batch=8) -- expect LOSS at 100,000 rows/org...
+    GPU-stream [ 200/1000]   10.03s  ETA  40.1s
+    GPU-stream [ 400/1000]   21.34s  ETA  32.0s
+    GPU-stream [ 600/1000]   32.63s  ETA  21.8s
+    GPU-stream [ 800/1000]   45.66s  ETA  11.4s
+    GPU-stream [1000/1000]   56.22s  ETA   0.0s
+
+————————————————————————————————————————————————————————————————————————————————
+  B) GPU streamed (batch=8)   |   wall-clock: 56.222s
+————————————————————————————————————————————————————————————————————————————————
+   OrgID  Industry             Rows             ITC Total
+       0  Manufacturing     100,000  Rs      1,438,657,570
+       1  Retail            100,000  Rs      1,431,808,562
+       2  IT Services       100,000  Rs      1,440,123,276
+       3  Auto Parts        100,000  Rs      1,436,358,502
+       4  Food Tech         100,000  Rs      1,438,822,716
+        ... 990 orgs not shown ...
+     995  Pharma            100,000  Rs      1,434,456,054
+     996  Logistics         100,000  Rs      1,431,014,787
+     997  FMCG              100,000  Rs      1,432,450,227
+     998  Textile           100,000  Rs      1,436,541,751
+     999  Energy            100,000  Rs      1,420,656,542
+————————————————————————————————————————————————————————————————————————————————
+
+  [C] GPU cross-org batch (macro=100) -- 10,000,000 rows per transfer...
+    GPU-cross [ 100/1000]    3.21s  ETA  28.9s  total xfer 610 MB
+    GPU-cross [ 200/1000]    5.63s  ETA  22.5s  total xfer 1221 MB
+    GPU-cross [ 300/1000]    8.20s  ETA  19.1s  total xfer 1831 MB
+    GPU-cross [ 400/1000]   10.29s  ETA  15.4s  total xfer 2441 MB
+    GPU-cross [ 500/1000]   12.27s  ETA  12.3s  total xfer 3052 MB
+    GPU-cross [ 600/1000]   14.68s  ETA   9.8s  total xfer 3662 MB
+    GPU-cross [ 700/1000]   17.09s  ETA   7.3s  total xfer 4272 MB
+    GPU-cross [ 800/1000]   19.53s  ETA   4.9s  total xfer 4883 MB
+    GPU-cross [ 900/1000]   21.95s  ETA   2.4s  total xfer 5493 MB
+    GPU-cross [1000/1000]   24.17s  ETA   0.0s  total xfer 6104 MB
+
+————————————————————————————————————————————————————————————————————————————————
+  C) GPU cross-org batch (macro=100)   |   wall-clock: 24.171s
+————————————————————————————————————————————————————————————————————————————————
+   OrgID  Industry             Rows             ITC Total
+       0  Manufacturing     100,000  Rs      1,438,657,570
+       1  Retail            100,000  Rs      1,431,808,562
+       2  IT Services       100,000  Rs      1,440,123,276
+       3  Auto Parts        100,000  Rs      1,436,358,502
+       4  Food Tech         100,000  Rs      1,438,822,716
+        ... 990 orgs not shown ...
+     995  Pharma            100,000  Rs      1,434,456,054
+     996  Logistics         100,000  Rs      1,431,014,787
+     997  FMCG              100,000  Rs      1,432,450,227
+     998  Textile           100,000  Rs      1,436,541,751
+     999  Energy            100,000  Rs      1,420,656,542
+————————————————————————————————————————————————————————————————————————————————
+
+════════════════════════════════════════════════════════════════════════════════
+  RESULTS SUMMARY -- Invoice Intelligence Multi-Org GPU Benchmark
+════════════════════════════════════════════════════════════════════════════════
+  Total rows      : 100,000,000
+  Organisations   : 1,000   |   Rows per org: 100,000 (~14 MB each)
+
+  A) pandas sequential   : 11.775s  (11.8 ms/org)
+  B) GPU streamed        : 56.222s  (0.2x)  LOSES to pandas -- PCIe overhead > compute gain
+     results match       : Yes
+  C) GPU cross-org batch : 24.171s  (0.5x)  marginal
+     results match       : Yes
+
+  KEY INSIGHT:
+  B loses because each org (~14 MB) is too small to amortize PCIe cost.
+  C concatenates orgs BEFORE transfer -- large compute-bound kernel.
+  org_id is just a groupby column. Tenant isolation is not a GPU concern.
+
+  BUSINESS CASE:
+  /itc-summary at 20M rows: 208ms (GPU) vs 2.35s (pandas) = 11.3x
+  Nightly batch 1,000 orgs: 24.2s vs 11.8s
+  At 10,000 orgs: ~4 min vs ~2 min
+  (See cudf_benchmark.py --rows 20000000 for single-org peak)
+════════════════════════════════════════════════════════════════════════════════
+

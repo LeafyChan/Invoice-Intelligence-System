@@ -1,59 +1,14 @@
-"""
-multi_org_benchmark_final.py
-=============================
-Invoice Intelligence — definitive multi-org GPU benchmark.
-Three strategies compared:
-
-  A) pandas sequential     — one org at a time on CPU (production baseline)
-  B) GPU streamed          — naive: small batches through GPU one-at-a-time.
-                             LOSES to pandas at 100K rows/org.
-                             PCIe transfer cost > compute saving. Documented
-                             honestly — this is what you get if you naively
-                             "add GPU" to a per-tenant loop.
-  C) GPU cross-org batch   — THE CORRECT PRODUCTION ARCHITECTURE.
-                             Concatenate N orgs into one large DataFrame,
-                             single H->D transfer, one kernel over all rows,
-                             groupby(org_id) to split results.
-                             org_id is just a column. Recovers 5-8x speedup.
-
-WHY THIS MATTERS (not "1s vs 0.5s"):
-  Indian SME accumulates 5-20M line items over 3-5 years.
-  At 20M rows, /itc-summary takes 2.35s on pandas vs 208ms on GPU --
-  the difference between "waiting" and "instant". (cudf_benchmark.py)
-  Nightly batch across all tenants:
-    pandas sequential  : ~16s  (1,000 orgs, 100M rows)
-    GPU cross-batch    :  ~2s  (same workload, Strategy C)
-  At 10,000 orgs: ~2 min vs ~16 min. Operationally meaningful.
-
-EXPECTED RESULTS (RTX 4050 6GB, WSL2, CUDA 12):
-  Strategy A pandas     : ~11-16s
-  Strategy B GPU stream : slower than A (PCIe dominates at 100K rows/org)
-  Strategy C GPU cross  :  ~2-4s  (5-8x over pandas)
-
-USAGE:
-    python scripts/multi_org_benchmark_final.py
-    python scripts/multi_org_benchmark_final.py --orgs 200
-    python scripts/multi_org_benchmark_final.py --macro-batch 50
-    python scripts/multi_org_benchmark_final.py --pandas-only
-    python scripts/multi_org_benchmark_final.py --skip-streamed
-"""
-
 import argparse
 import gc
 import time
 import concurrent.futures
-
 import numpy as np
 import pandas as pd_plain
-
-
-# -- Domain data ---------------------------------------------------------------
 
 INDUSTRIES = [
     "Manufacturing", "Retail", "IT Services", "Auto Parts",
     "Food Tech", "Pharma", "Logistics", "FMCG", "Textile", "Energy",
 ]
-
 VENDOR_POOLS = {
     "Manufacturing": ["SAIL Distributors", "Tisco Metals", "JSW Steel Traders",
                       "Hindalco Alloys", "Vedanta Copper", "NALCO Dealers"],
@@ -76,7 +31,6 @@ VENDOR_POOLS = {
     "Energy":        ["NTPC Vendors", "Adani Power Traders", "Tata Power Suppliers",
                       "BHEL Distributors", "Siemens India", "ABB India"],
 }
-
 HSN_CODES  = np.array(["7308","8481","3926","4820","8471","9403",
                         "2710","5407","7318","8536","3923","6802"], dtype=object)
 HSN_STATUS = np.array(["expected","expected","expected","expected","ambiguous","expected",
@@ -86,9 +40,6 @@ GST_RATES  = np.array([0.05, 0.12, 0.18, 0.28])
 GST_RATE_W = np.array([0.10, 0.20, 0.55, 0.15])
 LTR_VALUES = np.array([np.nan, np.nan, 5.0, 12.0, 18.0, 28.0, np.nan])
 BUP_VALUES = np.array([100., 100., 100., 100., 75., 50., 90.])
-
-
-# -- Data generation -----------------------------------------------------------
 
 def generate_org(org_id: int, n: int, industry: str, seed: int = 42) -> pd_plain.DataFrame:
     """Generate n synthetic line items for one org. ~14 MB at 100K rows."""
@@ -117,9 +68,6 @@ def generate_org(org_id: int, n: int, industry: str, seed: int = 42) -> pd_plain
         "line_tax_rate_percent": LTR_VALUES[rng.integers(0, len(LTR_VALUES), size=n)],
     })
 
-
-# -- ITC computation -----------------------------------------------------------
-
 def compute_itc(df) -> float:
     """ITC apportionment -- same math as production /itc-summary route."""
     biz_pct            = df["business_use_percent"].fillna(100) / 100.0
@@ -131,7 +79,6 @@ def compute_itc(df) -> float:
     line_tax  = line_tax_rate.where(has_line_rate, line_tax_apportion.fillna(0))
     claimable = line_tax * biz_pct
     return float(claimable.sum())
-
 
 def compute_itc_by_org(df) -> dict:
     """
@@ -150,9 +97,6 @@ def compute_itc_by_org(df) -> dict:
     by_org    = claimable.groupby(df["org_id"]).sum()
     return {int(k): float(v) for k, v in by_org.items()}
 
-
-# -- Strategy A: pandas sequential ---------------------------------------------
-
 def run_pandas(n_orgs: int, rows_per_org: int, industries: list) -> tuple:
     """One org at a time on CPU. Peak RAM ~14 MB. Production baseline."""
     results = {}
@@ -169,9 +113,6 @@ def run_pandas(n_orgs: int, rows_per_org: int, industries: list) -> tuple:
                   f"{(org_id+1)*rows_per_org:,} rows done")
     return time.perf_counter() - t_start, results
 
-
-# -- Strategy B: GPU streamed (naive -- documented to show why it loses) -------
-
 def run_gpu_streamed(n_orgs, rows_per_org, industries, batch_size, pd_gpu) -> tuple:
     """
     Naive GPU: transfer one small batch at a time.
@@ -181,7 +122,6 @@ def run_gpu_streamed(n_orgs, rows_per_org, industries, batch_size, pd_gpu) -> tu
     results = {}
     t_start = time.perf_counter()
     org_id  = 0
-
     def _one(cpu_df):
         gpu_df = pd_gpu.DataFrame(cpu_df)
         total  = compute_itc(gpu_df)
@@ -204,9 +144,6 @@ def run_gpu_streamed(n_orgs, rows_per_org, industries, batch_size, pd_gpu) -> tu
             print(f"    GPU-stream [{org_id:>4}/{n_orgs}]  "
                   f"{elapsed:6.2f}s  ETA {eta:5.1f}s")
     return time.perf_counter() - t_start, results
-
-
-# -- Strategy C: GPU cross-org batch (correct production pattern) --------------
 
 def run_gpu_cross_batch(n_orgs, rows_per_org, industries, macro_batch, pd_gpu) -> tuple:
     """
@@ -255,9 +192,6 @@ def run_gpu_cross_batch(n_orgs, rows_per_org, industries, macro_batch, pd_gpu) -
                   f"total xfer {xfer_mb_total:.0f} MB")
     return time.perf_counter() - t_start, results
 
-
-# -- Output helpers ------------------------------------------------------------
-
 def print_sample(label, wall, results, industries, rows_per_org, n=5):
     ids  = sorted(results.keys())
     show = ids[:n] + (ids[-n:] if len(ids) > n * 2 else [])
@@ -272,11 +206,9 @@ def print_sample(label, wall, results, industries, rows_per_org, n=5):
               f"Rs{results[oid]:>19,.0f}")
     print(f"{chr(8212)*80}")
 
-
 def verify(pr, gr):
     mm = [o for o in pr if abs(pr[o] - gr.get(o, 0)) >= 1.0]
     return ("Yes" if not mm else f"NO - {len(mm)} mismatches"), len(mm)
-
 
 def print_summary(n_orgs, rows_per_org, pt, st=None, ct=None, sm=None, cm=None):
     total = n_orgs * rows_per_org
@@ -310,9 +242,6 @@ def print_summary(n_orgs, rows_per_org, pt, st=None, ct=None, sm=None, cm=None):
         print(f"  At 10,000 orgs: ~{ct/n_orgs*10000/60:.0f} min vs ~{pt/n_orgs*10000/60:.0f} min")
     print(f"  (See cudf_benchmark.py --rows 20000000 for single-org peak)")
     print(f"{chr(9552)*80}\n")
-
-
-# -- Main ----------------------------------------------------------------------
 
 def run(n_orgs, rows_per_org, batch_size, macro_batch, pandas_only, skip_streamed):
     industries = [INDUSTRIES[i % len(INDUSTRIES)] for i in range(n_orgs)]

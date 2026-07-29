@@ -1,4 +1,3 @@
-"""grn_store.py — fixed ON CONFLICT target + get_processed_drive_ids only returns successful extractions"""
 from __future__ import annotations
 import json
 from uuid import uuid4
@@ -80,11 +79,6 @@ def get_grn(org_id: str, grn_id: str) -> dict | None:
 
 
 def get_processed_drive_ids(db, org_id: str) -> set:
-    """
-    Only returns drive_file_ids where grn_number is not null
-    (proof the LLM extracted a real GRN, not a failed/partial row).
-    Failed rows are excluded so sync retries them on the next run.
-    """
     rows = db.execute(
         text("""
             SELECT drive_file_id FROM grn

@@ -1,7 +1,3 @@
-"""
-main.py — Invoice Intelligence API (S19)
-"""
-
 import os
 import re
 import sys
@@ -12,7 +8,6 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv(), override=True)
 from pathlib import Path
 from typing import Optional
-
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, UploadFile
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -21,7 +16,6 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
 import json
 from app.auth import get_current_org
 from app.db import get_org_scoped_db, SessionLocal, _session_with_org
@@ -32,26 +26,25 @@ from app import bq_client
 from app.itc_engine import compute_itc_summary
 import re as _re
 from datetime import date as _date, timedelta as _td
-
 _core_parent = os.environ.get("CORE_PIPELINE_PATH")
 if not _core_parent:
     raise RuntimeError("CORE_PIPELINE_PATH is not set.")
 sys.path.insert(0, _core_parent)
 sys.path.insert(0, str(Path(_core_parent) / "core"))
-import pipeline as core_pipeline   # noqa: E402
-import drive_connector              # noqa: E402
-from app import hsn_generator                 # noqa: E402
-from app.drive_sync import sync_org_drive_folder  # noqa: E402
-from app import po_store, exception_store  # noqa: E402
-from app.po_gstr2b_drive_sync import sync_org_po_folder  # noqa: E402
-import po_extractor as core_po_extractor   # noqa: E402
-from app import waybill_store, grn_store, material_return_store, vendor_score_store  # noqa: E402
-from app.supply_chain_drive_sync import (  # noqa: E402
+import pipeline as core_pipeline   
+import drive_connector              
+from app import hsn_generator                 
+from app.drive_sync import sync_org_drive_folder  
+from app import po_store, exception_store  
+from app.po_gstr2b_drive_sync import sync_org_po_folder  
+import po_extractor as core_po_extractor   
+from app import waybill_store, grn_store, material_return_store, vendor_score_store  
+from app.supply_chain_drive_sync import (  
     sync_org_waybill_folder, sync_org_grn_folder, sync_org_material_return_folder)
-import waybill_extractor as core_waybill_extractor    # noqa: E402
-import grn_extractor as core_grn_extractor            # noqa: E402
-import material_return_extractor as core_mr_extractor  # noqa: E402
-import supply_chain_reconciliation as sc_reconciliation  # noqa: E402
+import waybill_extractor as core_waybill_extractor    
+import grn_extractor as core_grn_extractor            
+import material_return_extractor as core_mr_extractor  
+import supply_chain_reconciliation as sc_reconciliation  
 
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", tempfile.gettempdir())) / "invoice_uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -80,24 +73,19 @@ _VALID_FOLDER_TYPES = frozenset({
     "invoices", "purchase_orders",
     "waybills", "grn", "material_return",
 })
-
 app = FastAPI(title="Invoice Intelligence API")
-
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "https://country-starlit-improving.ngrok-free.dev"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
-
-# ── Overdue helpers (used in list_invoices) ───────────────────────────────────
 _NET_DAYS_RE = _re.compile(r"(\d+)\s*days?", _re.I)
 _ON_DELIVERY = _re.compile(r"cod|cash on delivery|on delivery|due on delivery|immediate", _re.I)
 _GRN_DAYS_RE = _re.compile(r"(\d+)\s*days?\s*(?:from|after)\s*(?:grn|receipt|delivery)", _re.I)
 
 
 def _effective_due(row: dict):
-    """Returns (date|None, source_str|None). Zero DB/LLM calls."""
     if row.get("payment_due_date"):
         d = row["payment_due_date"]
         if not isinstance(d, _date):
@@ -119,7 +107,7 @@ def _effective_due(row: dict):
         val = locals()[attr]
         if isinstance(val, str):
             try:
-                locals()[attr] if False else None  # silence linter
+                locals()[attr] if False else None  
             except Exception:
                 pass
     if isinstance(inv_date, str):
@@ -154,7 +142,7 @@ def _build_invoice_response(total, page, page_size, rows):
             d["is_overdue"] = False
         elif eff and src not in ("on_delivery", None):
             d["is_overdue"] = eff < today
-        # else SQL CASE already set is_overdue=False, leave it
+        
         result.append(d)
     return {
         "total_count":  total,
@@ -244,9 +232,6 @@ def _extract_drive_folder_id(raw: str) -> str:
     raise ValueError(
         "Could not find a Drive folder ID. Paste the folder ID or full folder URL.")
 
-
-# ── Health ────────────────────────────────────────────────────────────────────
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -261,9 +246,6 @@ def invoices_smoke_test(db: Session = Depends(get_db_for_request)):
         "invoice_count_for_this_org":
             db.execute(text("SELECT COUNT(*) FROM invoices")).scalar()
     }
-
-
-# ── Upload ────────────────────────────────────────────────────────────────────
 
 @app.post("/invoices/upload")
 async def upload_invoice(
@@ -305,9 +287,6 @@ async def upload_invoice(
         })
     return {"file_name": file.filename, "pages_processed": len(saved), "results": saved}
 
-
-# ── File URL ──────────────────────────────────────────────────────────────────
-
 @app.get("/invoices/{invoice_id}/file-url")
 def get_file_url(invoice_id: str, db: Session = Depends(get_db_for_request)):
     row = db.execute(
@@ -324,7 +303,6 @@ def get_file_url(invoice_id: str, db: Session = Depends(get_db_for_request)):
         return {"url": storage.get_signed_url(storage_path), **drive_fallback}
     except Exception as e:
         return {"url": None, "storage_error": str(e), **drive_fallback}
-
 
 @app.get("/invoices/{invoice_id}/linked-docs")
 def get_linked_docs(invoice_id: str, db: Session = Depends(get_db_for_request)):
@@ -382,9 +360,6 @@ def get_linked_docs(invoice_id: str, db: Session = Depends(get_db_for_request)):
             result["material_return"] = row[0]
 
     return result
-
-
-# ── Org settings ──────────────────────────────────────────────────────────────
 
 class _DriveFolderBody(BaseModel):
     folder_id: str
@@ -463,9 +438,6 @@ def get_org_settings(
         text("SELECT business_description FROM orgs WHERE org_id = :oid"),
         {"oid": ctx["org_id"]}).fetchone()
     return {"org_id": ctx["org_id"], "business_description": row[0] if row else None}
-
-
-# ── HSN/SAC profile ───────────────────────────────────────────────────────────
 
 def _load_hsn_profile(db: Session, org_id: str) -> dict:
     rows = db.execute(
@@ -618,9 +590,6 @@ def remove_hsn_code(
         old_value=code, summary=f"Removed HSN/SAC code {code}")
     return _load_hsn_profile(db, ctx["org_id"])
 
-
-# ── Drive sync ────────────────────────────────────────────────────────────────
-
 @app.post("/drive/sync")
 def sync_drive(
     ctx: dict = Depends(get_request_context),
@@ -640,9 +609,6 @@ def sync_drive(
     except Exception as e:
         raise HTTPException(500, f"Drive sync failed: {e}")
     return {"folder_id": folder_id, "new_files_processed": len(results), "results": results}
-
-
-# ── Rescan ────────────────────────────────────────────────────────────────────
 
 class _RescanBody(BaseModel):
     drive_file_ids: list[str]
@@ -689,9 +655,6 @@ def rescan_invoices(
             results.append({"file_name": f["name"], "status": "FAILED", "error": str(e)})
     return {"rescanned": len(target_files), "results": results}
 
-
-# ── Background poll ───────────────────────────────────────────────────────────
-
 @app.post("/admin/drive-poll-all")
 def drive_poll_all(x_poll_secret: str = Header(default="")):
     if not DRIVE_POLL_SECRET or x_poll_secret != DRIVE_POLL_SECRET:
@@ -715,9 +678,6 @@ def drive_poll_all(x_poll_secret: str = Header(default="")):
         except Exception as e:
             summary.append({"org_id": str(org_id), "error": str(e)})
     return {"orgs_polled": len(orgs), "results": summary}
-
-
-# ── Invoice PATCH ─────────────────────────────────────────────────────────────
 
 class _LineItemPatch(BaseModel):
     line_item_id: Optional[str] = None
@@ -859,9 +819,6 @@ def mark_invoice_paid(
     db.commit()
     return {"invoice_id": invoice_id, "is_paid": True, "already_paid": False}
 
-
-# ── Activity log ──────────────────────────────────────────────────────────────
-
 @app.get("/activity-log")
 def get_activity_log(
     db: Session = Depends(get_db_for_request),
@@ -893,9 +850,6 @@ def get_activity_log(
         "total_pages": max(1, -(-total // page_size)),
         "entries": [dict(r) for r in rows],
     }
-
-
-# ── Invoice list ──────────────────────────────────────────────────────────────
 
 @app.get("/invoices")
 def list_invoices(
@@ -931,7 +885,6 @@ def list_invoices(
     if paid is not None:
         filters.append("i.is_paid = :paid"); params["paid"] = paid
     if overdue_only:
-        # SQL catches explicit payment_due_date; Python post-processing catches payment_terms cases
         filters.append(
             "(i.is_paid = false AND i.payment_due_date IS NOT NULL AND i.payment_due_date < CURRENT_DATE)")
     if date_from:
@@ -1012,14 +965,7 @@ def list_invoices(
             LIMIT :limit OFFSET :offset
         """),
         params).mappings().all()
-
-    # ── Post-process: compute effective_due_date from payment_terms text ──────
-    # SQL CASE only catches explicit payment_due_date column values.
-    # This covers "Net 30", "Net 45 from GRN" etc. — zero extra DB calls.
     return _build_invoice_response(total, page, page_size, rows)
-
-
-# ── ITC summary ───────────────────────────────────────────────────────────────
 
 @app.get("/itc-summary")
 def itc_summary(
@@ -1059,9 +1005,6 @@ def analytics_vendor_reliability(ctx: dict = Depends(get_request_context)):
     if not bq_client.is_configured():
         return {"bq_configured": False, "vendors": []}
     return {"bq_configured": True, "vendors": bq_client.query_vendor_reliability(str(ctx["org_id"]))}
-
-
-# ── Training exports ──────────────────────────────────────────────────────────
 
 class _TrainingExportBody(BaseModel):
     invoice_id: str
@@ -1153,9 +1096,6 @@ def get_invoice(invoice_id: str, db: Session = Depends(get_db_for_request)):
         {"iid": invoice_id}).mappings().all()
     return {**dict(row), "line_items": [dict(i) for i in items]}
 
-
-# ── Multi-folder registration ─────────────────────────────────────────────────
-
 class _DriveFoldersBody(BaseModel):
     folder_type: str
     folder_id: str
@@ -1212,9 +1152,6 @@ def get_drive_folders_multi(
         "org_id": ctx["org_id"],
         "folders": {t: by_type.get(t) for t in sorted(_VALID_FOLDER_TYPES)},
     }
-
-
-# ── PO sync ───────────────────────────────────────────────────────────────────
 
 @app.post("/purchase-orders/sync")
 def sync_purchase_orders(
@@ -1313,10 +1250,7 @@ def patch_purchase_order(
         action="po_field_edit", entity_type="purchase_order", entity_id=po_id,
         summary=f"PO {po_id[:8]}… updated: {', '.join(body.keys())}")
     return {"po_id": po_id, "updated": True}
- 
- 
-# ── Waybill PATCH ─────────────────────────────────────────────────────────────
- 
+  
 _EDITABLE_WAYBILL_FIELDS = frozenset({
     "ewb_number", "ewb_date", "ewb_valid_until",
     "document_number", "document_date", "document_type",
@@ -1353,9 +1287,6 @@ def patch_waybill(
         summary=f"Waybill {waybill_id[:8]}… updated: {', '.join(body.keys())}")
     return {"waybill_id": waybill_id, "updated": True}
  
- 
-# ── GRN PATCH ─────────────────────────────────────────────────────────────────
- 
 _EDITABLE_GRN_FIELDS = frozenset({
     "grn_number", "grn_date", "po_number", "waybill_number",
     "vendor_name", "vendor_gstin",
@@ -1389,9 +1320,6 @@ def patch_grn(
         summary=f"GRN {grn_id[:8]}… updated: {', '.join(body.keys())}")
     return {"grn_id": grn_id, "updated": True}
  
- 
-# ── Material Return PATCH ─────────────────────────────────────────────────────
- 
 _EDITABLE_MRN_FIELDS = frozenset({
     "mrn_number", "mrn_date", "grn_number", "po_number",
     "vendor_name", "vendor_gstin",
@@ -1424,8 +1352,6 @@ def patch_material_return(
         action="mrn_field_edit", entity_type="material_return", entity_id=mrn_id,
         summary=f"MRN {mrn_id[:8]}… updated: {', '.join(body.keys())}")
     return {"mrn_id": mrn_id, "updated": True}
-
-# ── Exceptions ────────────────────────────────────────────────────────────────
 
 @app.get("/exceptions")
 def list_exceptions_route(
@@ -1494,9 +1420,6 @@ def delete_org(
     db.execute(text("DELETE FROM orgs WHERE org_id = CAST(:oid AS uuid)"), {"oid": oid})
     db.commit()
 
-
-# ── Outward HSN ───────────────────────────────────────────────────────────────
-
 def _list_outward_hsn(db: Session, org_id: str) -> list[dict]:
     try:
         rows = db.execute(
@@ -1535,9 +1458,6 @@ def remove_outward_hsn(code: str, ctx: dict = Depends(get_request_context), db: 
         {"oid": ctx["org_id"], "code": code.upper()})
     db.commit()
     return {"codes": _list_outward_hsn(db, ctx["org_id"])}
-
-
-# ── Supply chain reconciliation ───────────────────────────────────────────────
 
 @app.post("/supply-chain/reconcile")
 def run_supply_chain_reconcile(
@@ -1585,9 +1505,6 @@ def run_supply_chain_reconcile(
         "mrs_checked": len(mrs),
     }
 
-
-# ── Waybill routes ────────────────────────────────────────────────────────────
-
 @app.post("/waybills/sync")
 def sync_waybills(ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
     row = db.execute(
@@ -1618,9 +1535,6 @@ def get_waybill_route(waybill_id: str, ctx: dict = Depends(get_request_context))
     if not rec:
         raise HTTPException(404, "Waybill not found")
     return rec
-
-
-# ── GRN routes ────────────────────────────────────────────────────────────────
 
 @app.post("/grn/sync")
 def sync_grn(ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
@@ -1653,9 +1567,6 @@ def get_grn_route(grn_id: str, ctx: dict = Depends(get_request_context)):
         raise HTTPException(404, "GRN not found")
     return rec
 
-
-# ── Material Return routes ────────────────────────────────────────────────────
-
 @app.post("/material-returns/sync")
 def sync_material_returns(ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
     row = db.execute(
@@ -1686,9 +1597,6 @@ def get_material_return_route(mrn_id: str, ctx: dict = Depends(get_request_conte
     if not rec:
         raise HTTPException(404, "Material return not found")
     return rec
-
-
-# ── Vendor scorecard ──────────────────────────────────────────────────────────
 
 @app.get("/vendors/scorecard")
 def get_vendor_scorecard(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context)):
@@ -1724,9 +1632,6 @@ def recalculate_vendor_score(vendor_id: str, db: Session = Depends(get_db_for_re
     except Exception as e:
         raise HTTPException(500, f"Score calculation failed: {e}")
 
-
-# ── Debug ─────────────────────────────────────────────────────────────────────
-
 @app.get("/debug/drive-files")
 def debug_drive_files(folder_type: str = Query(default="invoices"), ctx: dict = Depends(get_request_context), db: Session = Depends(get_db_for_request)):
     row = db.execute(
@@ -1740,9 +1645,6 @@ def debug_drive_files(folder_type: str = Query(default="invoices"), ctx: dict = 
 @app.get("/debug/token")
 def debug_token(authorization: str = Header(None)):
     return {"raw_header": authorization}
-
-
-# ── Document Vault ────────────────────────────────────────────────────────────
 
 @app.get("/vault/invoices")
 def vault_invoices(db: Session = Depends(get_db_for_request), ctx: dict = Depends(get_request_context), limit: int = Query(default=200, ge=1, le=500)):
