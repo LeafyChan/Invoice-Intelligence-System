@@ -1,5 +1,8 @@
 import os
 import sys
+import json
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from pathlib import Path
 _core_parent = os.environ.get("CORE_PIPELINE_PATH", str(Path(__file__).parent.parent.parent.parent))
 sys.path.insert(0, str(Path(_core_parent) / "core"))
@@ -7,6 +10,7 @@ import extractor
 
 DEMO_MODE = os.environ.get("INVOICE_OCR_DEMO_MODE", "1") == "1"
 GROQ_MODEL_NAME = extractor.GROQ_MODEL_NAME
+_MASTER_HSN_PATH = Path(__file__).parent / "config" / "hsn_master.json"
 _SYSTEM_PROMPT = """You are a GST/HSN classification assistant for an Indian SME.
 
 Given a one-sentence description of a business, produce a list of HSN
@@ -77,15 +81,45 @@ _JSON_SCHEMA = {
     "additionalProperties": False,
 }
 
+def _retrieve_top_hsn_candidates(business_description: str, top_k: int = 15) -> list:
+    if not _MASTER_HSN_PATH.exists():
+        return []
+    
+    with open(_MASTER_HSN_PATH, "r", encoding="utf-8") as f:
+        catalog = json.load(f)
+        
+    descriptions = [item["description"] for item in catalog]
+    descriptions.append(business_description) # Add query to corpus
+    
+    vectorizer = TfidfVectorizer(stop_words='english')
+    tfidf_matrix = vectorizer.fit_transform(descriptions)
+    
+    # Compute similarity between query (last item) and all catalog items
+    cosine_similarities = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1]).flatten()
+    
+    # Get top_k indices sorted by score
+    top_indices = cosine_similarities.argsort()[::-1][:top_k]
+    
+    return [catalog[i] for i in top_indices if cosine_similarities[i] > 0.05]
 
 def _call_groq(business_description: str) -> dict:
     from groq import Groq
+
+    candidates = _retrieve_top_hsn_candidates(business_description, top_k=20)
+    candidates_text = json.dumps(candidates, indent=2)
+
+    rag_system_prompt = _SYSTEM_PROMPT + f"""
+
+---
+RELEVANT OFFICIAL HSN/SAC CANDIDATES DATABASE (Select ONLY from these matching codes where applicable, or use your knowledge base only if strictly certain):
+{candidates_text}
+"""
 
     client = Groq()  
     response = client.chat.completions.create(
         model=GROQ_MODEL_NAME,
         messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": rag_system_prompt},
             {"role": "user", "content": f"Business description: {business_description}"},
         ],
         response_format={

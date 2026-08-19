@@ -1,0 +1,27 @@
+[
+  {
+    "code": "4407",
+    "code_type": "HSN",
+    "description": "Wood sawn or chipped lengthwise, sliced or peeled"
+  },
+  {
+    "code": "9403",
+    "code_type": "HSN",
+    "description": "Other furniture and parts thereof"
+  },
+  {
+    "code": "9401",
+    "code_type": "HSN",
+    "description": "Seats (whether or not convertible into beds), and parts thereof"
+  },
+  {
+    "code": "8471",
+    "code_type": "HSN",
+    "description": "Automatic data processing machines and units thereof (computers, hardware)"
+  },
+  {
+    "code": "9983",
+    "code_type": "SAC",
+    "description": "Other professional, technical and business services"
+  }
+]
