@@ -88,10 +88,10 @@ function PayByCell({ inv, onMarkPaid, markingPaid }) {
     return (
       <span
         style={{
-          background: "#ECFDF5",
-          color: "#059669",
-          border: "1px solid rgba(5, 150, 105, 0.2)",
-          borderRadius: 6,
+          background: "rgba(16, 185, 129, 0.1)",
+          color: "#34d399",
+          border: "1px solid rgba(16, 185, 129, 0.2)",
+          borderRadius: "9999px",
           padding: "2px 8px",
           fontSize: 11,
           fontWeight: 600,
@@ -100,15 +100,15 @@ function PayByCell({ inv, onMarkPaid, markingPaid }) {
         ✓ Paid
       </span>
     );
-  if (!eff) return <span style={{ color: "#94A3B8" }}>—</span>;
+  if (!eff) return <span style={{ color: "#64748B" }}>—</span>;
   if (eff.type === "on_delivery")
     return (
       <span
         style={{
-          background: "#EFF6FF",
-          color: "#2563EB",
-          border: "1px solid rgba(37, 99, 235, 0.2)",
-          borderRadius: 6,
+          background: "rgba(59, 130, 246, 0.1)",
+          color: "#60a5fa",
+          border: "1px solid rgba(59, 130, 246, 0.2)",
+          borderRadius: "9999px",
           padding: "2px 8px",
           fontSize: 11,
           fontWeight: 600,
@@ -118,7 +118,7 @@ function PayByCell({ inv, onMarkPaid, markingPaid }) {
       </span>
     );
   if (!eff.date)
-    return <span style={{ color: "#94A3B8", fontSize: 11 }}>—</span>;
+    return <span style={{ color: "#64748B", fontSize: 11 }}>—</span>;
   const today = new Date();
   const diff = Math.ceil((eff.date - today) / 86400000);
   if (overdue) {
@@ -133,10 +133,10 @@ function PayByCell({ inv, onMarkPaid, markingPaid }) {
       >
         <span
           style={{
-            background: "#FFF1F2",
-            color: "#E11D48",
-            border: "1px solid rgba(225, 29, 72, 0.2)",
-            borderRadius: 6,
+            background: "rgba(244, 63, 94, 0.1)",
+            color: "#f43f5e",
+            border: "1px solid rgba(244, 63, 94, 0.2)",
+            borderRadius: "9999px",
             padding: "2px 8px",
             fontSize: 11,
             fontWeight: 700,
@@ -152,7 +152,7 @@ function PayByCell({ inv, onMarkPaid, markingPaid }) {
               onMarkPaid();
             }}
             style={{
-              background: markingPaid ? "#E2E8F0" : "#059669",
+              background: markingPaid ? "#334155" : "#6366f1",
               color: markingPaid ? "#94A3B8" : "#fff",
               border: "none",
               borderRadius: 6,
@@ -169,8 +169,8 @@ function PayByCell({ inv, onMarkPaid, markingPaid }) {
       </span>
     );
   }
-  const color = diff <= 7 ? "#D97706" : "#475569";
-  const bg = diff <= 7 ? "#FFFBEB" : "transparent";
+  const color = diff <= 7 ? "#fbbf24" : "#94a3b8";
+  const bg = diff <= 7 ? "rgba(245, 158, 11, 0.1)" : "transparent";
   return (
     <span
       style={{
@@ -196,19 +196,19 @@ function OverdueBanner({ count, onFilter }) {
         alignItems: "center",
         justifyContent: "space-between",
         padding: "12px 24px",
-        background: "#FFF1F2",
-        borderBottom: "1px solid #FECDD3",
+        background: "rgba(244, 63, 94, 0.08)",
+        borderBottom: "1px solid rgba(244, 63, 94, 0.2)",
       }}
     >
-      <span style={{ fontSize: 13, color: "#9F1239", fontWeight: 600 }}>
+      <span style={{ fontSize: 13, color: "#fda4af", fontWeight: 600 }}>
         ⚠️ {count} invoice{count > 1 ? "s" : ""} past payment due date
       </span>
       <button
         onClick={onFilter}
         style={{
-          border: "1px solid #FDA4AF",
-          background: "#fff",
-          color: "#E11D48",
+          border: "1px solid rgba(244, 63, 94, 0.3)",
+          background: "rgba(244, 63, 94, 0.15)",
+          color: "#fda4af",
           borderRadius: 6,
           padding: "5px 12px",
           fontSize: 12,
@@ -274,11 +274,11 @@ function getHsnEligibility(code, profile) {
 }
 
 const HSN_BADGE = {
-  eligible: { bg: "#ECFDF5", color: "#059669", text: "✓" },
-  review: { bg: "#FEF3C7", color: "#B45309", text: "?" },
-  chapter: { bg: "#FFF7ED", color: "#C2410C", text: "⚠️" },
-  unknown: { bg: "#F1F5F9", color: "#64748B", text: "—" },
-  excluded: { bg: "#FFF1F2", color: "#E11D48", text: "✗" },
+  eligible: { bg: "rgba(16, 185, 129, 0.1)", color: "#34d399", text: "✓" },
+  review: { bg: "rgba(245, 158, 11, 0.1)", color: "#fbbf24", text: "?" },
+  chapter: { bg: "rgba(249, 115, 22, 0.1)", color: "#fb923c", text: "⚠️" },
+  unknown: { bg: "rgba(100, 116, 139, 0.1)", color: "#94a3b8", text: "—" },
+  excluded: { bg: "rgba(244, 63, 94, 0.1)", color: "#f43f5e", text: "✗" },
 };
 
 function HsnCodeBadge({ code, hsnProfile, getToken, onProfileUpdate }) {
@@ -353,10 +353,10 @@ function HsnCodeBadge({ code, hsnProfile, getToken, onProfileUpdate }) {
             top: "calc(100% + 4px)",
             left: 0,
             zIndex: 500,
-            background: "#fff",
-            border: "1px solid #E2E8F0",
+            background: "#090d16",
+            border: "1px solid #1e293b",
             borderRadius: 8,
-            boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)",
+            boxShadow: "0 10px 25px -5px rgba(0,0,0,0.5)",
             padding: "12px 14px",
             minWidth: 220,
             fontFamily: "'Inter',system-ui,sans-serif",
@@ -365,7 +365,7 @@ function HsnCodeBadge({ code, hsnProfile, getToken, onProfileUpdate }) {
           <div
             style={{
               fontSize: 11,
-              color: "#64748B",
+              color: "#94a3b8",
               marginBottom: 10,
               lineHeight: 1.4,
             }}
@@ -373,17 +373,17 @@ function HsnCodeBadge({ code, hsnProfile, getToken, onProfileUpdate }) {
             {reason}
           </div>
           {status === "done_add" && (
-            <div style={{ fontSize: 12, color: "#059669", fontWeight: 600 }}>
+            <div style={{ fontSize: 12, color: "#34d399", fontWeight: 600 }}>
               ✓ Added to ITC profile
             </div>
           )}
           {status === "done_bl" && (
-            <div style={{ fontSize: 12, color: "#E11D48", fontWeight: 600 }}>
+            <div style={{ fontSize: 12, color: "#f43f5e", fontWeight: 600 }}>
               ✗ Blacklisted
             </div>
           )}
           {status === "error" && (
-            <div style={{ fontSize: 12, color: "#E11D48" }}>
+            <div style={{ fontSize: 12, color: "#f43f5e" }}>
               Error — try again
             </div>
           )}
@@ -393,9 +393,9 @@ function HsnCodeBadge({ code, hsnProfile, getToken, onProfileUpdate }) {
                 onClick={() => act("expected")}
                 style={{
                   flex: 1,
-                  background: "#ECFDF5",
-                  color: "#059669",
-                  border: "1px solid #A7F3D0",
+                  background: "rgba(16, 185, 129, 0.1)",
+                  color: "#34d399",
+                  border: "1px solid rgba(16, 185, 129, 0.2)",
                   borderRadius: 6,
                   padding: "6px 8px",
                   fontSize: 11,
@@ -410,9 +410,9 @@ function HsnCodeBadge({ code, hsnProfile, getToken, onProfileUpdate }) {
                 onClick={() => act("excluded")}
                 style={{
                   flex: 1,
-                  background: "#FFF1F2",
-                  color: "#E11D48",
-                  border: "1px solid #FECDD3",
+                  background: "rgba(244, 63, 94, 0.1)",
+                  color: "#f43f5e",
+                  border: "1px solid rgba(244, 63, 94, 0.2)",
                   borderRadius: 6,
                   padding: "6px 8px",
                   fontSize: 11,
@@ -426,7 +426,7 @@ function HsnCodeBadge({ code, hsnProfile, getToken, onProfileUpdate }) {
             </div>
           )}
           {(status === "adding" || status === "blacklisting") && (
-            <div style={{ fontSize: 12, color: "#64748B" }}>
+            <div style={{ fontSize: 12, color: "#94a3b8" }}>
               {status === "adding" ? "Adding…" : "Blacklisting…"}
             </div>
           )}
@@ -437,30 +437,38 @@ function HsnCodeBadge({ code, hsnProfile, getToken, onProfileUpdate }) {
 }
 
 const STATUS_STYLES = {
-  PASSED: { label: "Passed", bg: "#ECFDF5", color: "#059669" },
-  WARNING: { label: "Warning", bg: "#FEF3C7", color: "#B45309" },
-  FAILED: { label: "Failed", bg: "#FFF1F2", color: "#E11D48" },
+  PASSED: { label: "Passed", bg: "rgba(16, 185, 129, 0.1)", color: "#34d399" },
+  WARNING: {
+    label: "Warning",
+    bg: "rgba(245, 158, 11, 0.1)",
+    color: "#fbbf24",
+  },
+  FAILED: { label: "Failed", bg: "rgba(244, 63, 94, 0.1)", color: "#f43f5e" },
   NEEDS_MANUAL_REVIEW: {
     label: "Needs review",
-    bg: "#EEF2FF",
-    color: "#4F46E5",
+    bg: "rgba(99, 102, 241, 0.1)",
+    color: "#818cf8",
   },
-  PLACEHOLDER: { label: "Placeholder", bg: "#F0FDF4", color: "#15803D" },
+  PLACEHOLDER: {
+    label: "Placeholder",
+    bg: "rgba(16, 185, 129, 0.1)",
+    color: "#34d399",
+  },
 };
 
 function StatusBadge({ status }) {
   const st = STATUS_STYLES[status] || {
     label: status || "Unknown",
-    bg: "#F1F5F9",
-    color: "#475569",
+    bg: "rgba(100, 116, 139, 0.1)",
+    color: "#94a3b8",
   };
   return (
     <span
       style={{
         background: st.bg,
         color: st.color,
-        border: `1px solid ${st.color}20`,
-        borderRadius: 6,
+        border: `1px solid ${st.color}33`,
+        borderRadius: "9999px",
         padding: "3px 8px",
         fontSize: 11,
         fontWeight: 600,
@@ -504,9 +512,10 @@ function DocChainBadge({ inv }) {
               borderRadius: 4,
               fontSize: 10,
               fontWeight: 700,
-              background: active ? "#0F172A" : "#F1F5F9",
-              color: active ? "#fff" : "#94A3B8",
+              background: active ? "#1e293b" : "#0f172a",
+              color: active ? "#f8fafc" : "#475569",
               cursor: active ? "pointer" : "default",
+              border: `1px solid ${active ? "#334155" : "#1e293b"}`,
             }}
           >
             {d.key}
@@ -520,34 +529,49 @@ function DocChainBadge({ inv }) {
 const s = {
   wrap: {
     fontFamily: "'Inter',system-ui,sans-serif",
-    background: "#F8FAFC",
+    background: "#020617",
     minHeight: "100vh",
-    color: "#0F172A",
+    color: "#f8fafc",
   },
   header: {
-    background: "#FFFFFF",
-    borderBottom: "1px solid #E2E8F0",
+    background: "rgba(9, 13, 22, 0.75)",
+    backdropFilter: "blur(12px)",
+    borderBottom: "1px solid #1e293b",
     padding: "20px 24px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+    position: "sticky",
+    top: 0,
+    zIndex: 30,
   },
-  h1: { margin: 0, fontSize: 20, fontWeight: 700, color: "#0F172A" },
+  h1: {
+    margin: 0,
+    fontSize: 20,
+    fontWeight: 700,
+    color: "#ffffff",
+    letterSpacing: "-0.025em",
+  },
   btn: {
     border: "none",
-    borderRadius: 6,
+    borderRadius: 8,
     padding: "7px 14px",
     fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",
     fontFamily: "inherit",
+    transition: "all 0.15s ease",
   },
-  primary: { background: "#4F46E5", color: "#fff" },
+  primary: {
+    background: "#6366f1",
+    color: "#fff",
+    boxShadow: "0 4px 12px rgba(99, 102, 241, 0.3)",
+  },
   ghost: {
-    background: "#FFFFFF",
-    border: "1px solid #CBD5E1",
-    color: "#334155",
+    background: "#090d16",
+    border: "1px solid #1e293b",
+    color: "#cbd5e1",
     padding: "6px 12px",
   },
   rescanBar: {
@@ -555,29 +579,29 @@ const s = {
     alignItems: "center",
     gap: 12,
     padding: "10px 24px",
-    background: "#EEF2FF",
-    borderBottom: "1px solid #C7D2FE",
+    background: "rgba(99, 102, 241, 0.1)",
+    borderBottom: "1px solid rgba(99, 102, 241, 0.2)",
     flexWrap: "wrap",
   },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: {
-    padding: "10px 12px",
+    padding: "12px 16px",
     textAlign: "left",
-    background: "#F8FAFC",
-    color: "#475569",
-    fontWeight: 600,
+    background: "rgba(9, 13, 22, 0.8)",
+    color: "#94a3b8",
+    fontWeight: 500,
     fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: "0.05em",
     whiteSpace: "nowrap",
-    borderBottom: "1px solid #E2E8F0",
+    borderBottom: "1px solid #1e293b",
     position: "sticky",
     top: 0,
     zIndex: 1,
   },
   td: {
-    padding: "12px",
-    borderBottom: "1px solid #F1F5F9",
+    padding: "14px 16px",
+    borderBottom: "1px solid rgba(30, 41, 59, 0.5)",
     verticalAlign: "middle",
   },
   panel: {
@@ -586,27 +610,28 @@ const s = {
     top: 0,
     bottom: 0,
     width: 460,
-    background: "#fff",
-    boxShadow: "-10px 0 25px -5px rgba(0,0,0,0.1)",
+    background: "#090d16",
+    boxShadow: "-10px 0 25px -5px rgba(0,0,0,0.8)",
     overflowY: "auto",
     zIndex: 200,
     padding: "24px",
     fontFamily: "'Inter',system-ui,sans-serif",
-    borderLeft: "1px solid #E2E8F0",
+    borderLeft: "1px solid #1e293b",
+    color: "#f8fafc",
   },
   lbl: {
     fontSize: 11,
-    color: "#64748B",
+    color: "#64748b",
     fontWeight: 600,
     margin: "10px 0 2px",
     textTransform: "uppercase",
     letterSpacing: "0.03em",
   },
-  val: { fontSize: 13, color: "#0F172A", margin: 0, fontWeight: 500 },
+  val: { fontSize: 13, color: "#f8fafc", margin: 0, fontWeight: 500 },
   section: {
     fontSize: 11,
     fontWeight: 700,
-    color: "#4F46E5",
+    color: "#818cf8",
     letterSpacing: "0.06em",
     textTransform: "uppercase",
     margin: "16px 0 8px",
@@ -699,14 +724,14 @@ function SidePanel({
           position: "absolute",
           top: 20,
           right: 20,
-          background: "#F1F5F9",
+          background: "#1e293b",
           border: "none",
           borderRadius: 6,
           width: 28,
           height: 28,
           fontSize: 16,
           cursor: "pointer",
-          color: "#475569",
+          color: "#cbd5e1",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -723,7 +748,7 @@ function SidePanel({
             fontSize: 12,
             wordBreak: "break-all",
             marginBottom: 12,
-            color: "#475569",
+            color: "#94a3b8",
           }}
         >
           {inv.file_name || "—"}
@@ -731,8 +756,8 @@ function SidePanel({
         {overdue && !inv.is_paid && (
           <div
             style={{
-              background: "#FFF1F2",
-              border: "1px solid #FECDD3",
+              background: "rgba(244, 63, 94, 0.1)",
+              border: "1px solid rgba(244, 63, 94, 0.3)",
               borderRadius: 8,
               padding: "10px 14px",
               marginBottom: 14,
@@ -742,14 +767,14 @@ function SidePanel({
               gap: 8,
             }}
           >
-            <span style={{ fontSize: 12, color: "#9F1239", fontWeight: 600 }}>
+            <span style={{ fontSize: 12, color: "#fda4af", fontWeight: 600 }}>
               ⚠️ Payment overdue
             </span>
             <button
               disabled={markingPaid}
               onClick={handleMarkPaid}
               style={{
-                background: "#059669",
+                background: "#10b981",
                 color: "#fff",
                 border: "none",
                 borderRadius: 6,
@@ -767,13 +792,13 @@ function SidePanel({
         {inv.is_paid && (
           <div
             style={{
-              background: "#ECFDF5",
-              border: "1px solid #A7F3D0",
+              background: "rgba(16, 185, 129, 0.1)",
+              border: "1px solid rgba(16, 185, 129, 0.3)",
               borderRadius: 8,
               padding: "10px 14px",
               marginBottom: 14,
               fontSize: 12,
-              color: "#065F46",
+              color: "#34d399",
               fontWeight: 600,
               display: "flex",
               justifyContent: "space-between",
@@ -797,11 +822,11 @@ function SidePanel({
               }}
               style={{
                 background: "none",
-                border: "1px solid #A7F3D0",
+                border: "1px solid rgba(16, 185, 129, 0.4)",
                 borderRadius: 4,
                 padding: "2px 8px",
                 fontSize: 11,
-                color: "#065F46",
+                color: "#34d399",
                 cursor: "pointer",
                 fontFamily: "inherit",
               }}
@@ -813,20 +838,20 @@ function SidePanel({
         {inv.status === "PLACEHOLDER" && (
           <div
             style={{
-              background: "#F0FDF4",
-              border: "1px solid #86EFAC",
+              background: "rgba(16, 185, 129, 0.1)",
+              border: "1px solid rgba(16, 185, 129, 0.3)",
               borderRadius: 8,
               padding: "10px 14px",
               marginBottom: 14,
               fontSize: 12,
-              color: "#166534",
+              color: "#34d399",
             }}
           >
             <strong>Placeholder</strong> — created from linked documents.
           </div>
         )}
         {detailLoading && (
-          <p style={{ fontSize: 12, color: "#94A3B8", marginBottom: 12 }}>
+          <p style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
             Loading complete record…
           </p>
         )}
@@ -888,9 +913,13 @@ function SidePanel({
                 padding: "6px 10px",
                 borderRadius: 6,
                 fontSize: 11,
-                background: fid ? "#EEF2FF" : ref ? "#FEF3C7" : "#F1F5F9",
-                color: fid ? "#4F46E5" : ref ? "#B45309" : "#94A3B8",
-                border: `1px solid ${fid ? "#C7D2FE" : ref ? "#FDE68A" : "#E2E8F0"}`,
+                background: fid
+                  ? "rgba(99, 102, 241, 0.1)"
+                  : ref
+                    ? "rgba(245, 158, 11, 0.1)"
+                    : "#0f172a",
+                color: fid ? "#818cf8" : ref ? "#fbbf24" : "#64748b",
+                border: `1px solid ${fid ? "rgba(99, 102, 241, 0.3)" : ref ? "rgba(245, 158, 11, 0.3)" : "#1e293b"}`,
                 cursor: fid ? "pointer" : "default",
                 fontWeight: 500,
               }}
@@ -916,7 +945,7 @@ function SidePanel({
                 style={{
                   fontSize: 10,
                   fontWeight: 400,
-                  color: "#94A3B8",
+                  color: "#64748b",
                   textTransform: "none",
                   letterSpacing: 0,
                 }}
@@ -950,7 +979,7 @@ function SidePanel({
             <p style={s.section}>Line Items</p>
             <div
               style={{
-                border: "1px solid #E2E8F0",
+                border: "1px solid #1e293b",
                 borderRadius: 8,
                 overflow: "hidden",
                 marginBottom: 14,
@@ -966,7 +995,7 @@ function SidePanel({
                           style={{
                             ...s.th,
                             position: "static",
-                            background: "#F8FAFC",
+                            background: "#090d16",
                           }}
                         >
                           {h}
@@ -1009,13 +1038,13 @@ function SidePanel({
         {rich.issues && (
           <div
             style={{
-              background: "#FFFBEB",
-              border: "1px solid #FDE68A",
+              background: "rgba(245, 158, 11, 0.1)",
+              border: "1px solid rgba(245, 158, 11, 0.3)",
               borderRadius: 8,
               padding: "10px 14px",
               marginBottom: 14,
               fontSize: 12,
-              color: "#B45309",
+              color: "#fbbf24",
             }}
           >
             <strong>Issues Identified:</strong> {rich.issues}
@@ -1058,7 +1087,7 @@ function SidePanel({
               setVerifyInv(rich);
               onClose();
             }}
-            style={{ ...s.btn, background: "#059669", color: "#fff" }}
+            style={{ ...s.btn, background: "#10b981", color: "#fff" }}
           >
             🛡️ Verify Compliance
           </button>
@@ -1080,15 +1109,17 @@ function SidePanel({
                       padding: "8px 12px",
                       borderRadius: 6,
                       fontSize: 12,
-                      background: queued ? "#EEF2FF" : "#F8FAFC",
+                      background: queued
+                        ? "rgba(99, 102, 241, 0.1)"
+                        : "#0f172a",
                       border: queued
-                        ? "1px solid #C7D2FE"
-                        : "1px solid #E2E8F0",
+                        ? "1px solid rgba(99, 102, 241, 0.3)"
+                        : "1px solid #1e293b",
                     }}
                   >
                     <span
                       style={{
-                        color: queued ? "#4F46E5" : "#334155",
+                        color: queued ? "#818cf8" : "#cbd5e1",
                         fontWeight: queued ? 600 : 400,
                       }}
                     >
@@ -1098,7 +1129,7 @@ function SidePanel({
                           style={{
                             marginLeft: 8,
                             fontSize: 10,
-                            color: "#4F46E5",
+                            color: "#818cf8",
                             fontWeight: 600,
                           }}
                         >
@@ -1112,7 +1143,7 @@ function SidePanel({
                         ...s.btn,
                         fontSize: 11,
                         padding: "4px 10px",
-                        background: queued ? "#4F46E5" : "#64748B",
+                        background: queued ? "#6366f1" : "#334155",
                         color: "#fff",
                       }}
                     >
@@ -1346,7 +1377,7 @@ export default function InvoiceList() {
       <div style={s.header}>
         <div>
           <h1 style={s.h1}>Invoices Command Center</h1>
-          <p style={{ margin: "2px 0 0", fontSize: 13, color: "#64748B" }}>
+          <p style={{ margin: "2px 0 0", fontSize: 13, color: "#94a3b8" }}>
             Track document chains, verify ITC eligibility, and resolve
             exceptions.
           </p>
@@ -1388,7 +1419,7 @@ export default function InvoiceList() {
 
       {rescanSet.size > 0 && (
         <div style={s.rescanBar}>
-          <span style={{ fontSize: 12, color: "#4F46E5", fontWeight: 600 }}>
+          <span style={{ fontSize: 12, color: "#818cf8", fontWeight: 600 }}>
             {rescanSet.size} file{rescanSet.size > 1 ? "s" : ""} queued for
             rescan
           </span>
@@ -1406,7 +1437,7 @@ export default function InvoiceList() {
             Clear selection
           </button>
           {rescanMsg && (
-            <span style={{ fontSize: 12, color: "#059669", fontWeight: 600 }}>
+            <span style={{ fontSize: 12, color: "#34d399", fontWeight: 600 }}>
               {rescanMsg}
             </span>
           )}
@@ -1418,7 +1449,7 @@ export default function InvoiceList() {
           style={{
             padding: "40px 24px",
             textAlign: "center",
-            color: "#64748B",
+            color: "#64748b",
           }}
         >
           Loading invoices…
@@ -1428,8 +1459,9 @@ export default function InvoiceList() {
         <div
           style={{
             padding: "20px 24px",
-            color: "#E11D48",
-            background: "#FFF1F2",
+            color: "#f43f5e",
+            background: "rgba(244, 63, 94, 0.1)",
+            border: "1px solid rgba(244, 63, 94, 0.2)",
             margin: "16px 24px",
             borderRadius: 8,
           }}
@@ -1442,7 +1474,7 @@ export default function InvoiceList() {
           style={{
             padding: "40px 24px",
             textAlign: "center",
-            color: "#64748B",
+            color: "#64748b",
           }}
         >
           {isOverdueFiltered
@@ -1454,9 +1486,9 @@ export default function InvoiceList() {
       {!loading && invoices.length > 0 && (
         <div
           style={{
-            background: "#FFFFFF",
-            borderTop: "1px solid #E2E8F0",
-            borderBottom: "1px solid #E2E8F0",
+            background: "#090d16",
+            borderTop: "1px solid #1e293b",
+            borderBottom: "1px solid #1e293b",
             overflowX: "auto",
           }}
         >
@@ -1502,25 +1534,25 @@ export default function InvoiceList() {
                     style={{
                       cursor: "pointer",
                       background: inRescan
-                        ? "#EEF2FF"
+                        ? "rgba(99, 102, 241, 0.1)"
                         : overdue
-                          ? "#FFF5F5"
+                          ? "rgba(244, 63, 94, 0.05)"
                           : isPlaceholder
-                            ? "#F8FAFC"
+                            ? "rgba(15, 23, 42, 0.5)"
                             : "transparent",
                       transition: "background 0.1s ease",
                     }}
                     onMouseEnter={(e) => {
                       if (!inRescan && !isPlaceholder && !overdue)
-                        e.currentTarget.style.background = "#F8FAFC";
+                        e.currentTarget.style.background = "#0f172a";
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = inRescan
-                        ? "#EEF2FF"
+                        ? "rgba(99, 102, 241, 0.1)"
                         : overdue
-                          ? "#FFF5F5"
+                          ? "rgba(244, 63, 94, 0.05)"
                           : isPlaceholder
-                            ? "#F8FAFC"
+                            ? "rgba(15, 23, 42, 0.5)"
                             : "transparent";
                     }}
                     onClick={() => setPanelInv(inv)}
@@ -1537,7 +1569,7 @@ export default function InvoiceList() {
                           type="checkbox"
                           checked={inRescan}
                           onChange={() => {}}
-                          style={{ cursor: "pointer", accentColor: "#4F46E5" }}
+                          style={{ cursor: "pointer", accentColor: "#6366f1" }}
                         />
                       )}
                     </td>
@@ -1546,12 +1578,12 @@ export default function InvoiceList() {
                         style={{
                           fontWeight: 600,
                           fontSize: 13,
-                          color: "#0F172A",
+                          color: "#f8fafc",
                         }}
                       >
                         {inv.vendor_name ||
                           (isPlaceholder ? (
-                            <em style={{ color: "#94A3B8" }}>Placeholder</em>
+                            <em style={{ color: "#64748b" }}>Placeholder</em>
                           ) : (
                             "—"
                           ))}
@@ -1560,7 +1592,7 @@ export default function InvoiceList() {
                         <div
                           style={{
                             fontSize: 11,
-                            color: "#64748B",
+                            color: "#64748b",
                             fontFamily: "monospace",
                           }}
                         >
@@ -1572,7 +1604,7 @@ export default function InvoiceList() {
                       style={{
                         ...s.td,
                         fontSize: 12,
-                        color: inv.invoice_date ? "#334155" : "#94A3B8",
+                        color: inv.invoice_date ? "#cbd5e1" : "#64748b",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -1582,7 +1614,7 @@ export default function InvoiceList() {
                       style={{
                         ...s.td,
                         fontSize: 12,
-                        color: inv.po_date ? "#334155" : "#94A3B8",
+                        color: inv.po_date ? "#cbd5e1" : "#64748b",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -1593,7 +1625,7 @@ export default function InvoiceList() {
                         ...s.td,
                         fontFamily: "monospace",
                         fontSize: 12,
-                        color: inv.po_number ? "#0F172A" : "#94A3B8",
+                        color: inv.po_number ? "#f8fafc" : "#64748b",
                       }}
                     >
                       {inv.po_number || "—"}
@@ -1603,7 +1635,7 @@ export default function InvoiceList() {
                         ...s.td,
                         fontFamily: "monospace",
                         fontSize: 12,
-                        color: inv.waybill_number ? "#0F172A" : "#94A3B8",
+                        color: inv.waybill_number ? "#f8fafc" : "#64748b",
                       }}
                     >
                       {inv.waybill_number || "—"}
@@ -1613,7 +1645,7 @@ export default function InvoiceList() {
                         ...s.td,
                         fontFamily: "monospace",
                         fontSize: 12,
-                        color: inv.grn_number ? "#0F172A" : "#94A3B8",
+                        color: inv.grn_number ? "#f8fafc" : "#64748b",
                       }}
                     >
                       {inv.grn_number || "—"}
@@ -1623,7 +1655,7 @@ export default function InvoiceList() {
                         ...s.td,
                         fontFamily: "monospace",
                         fontSize: 12,
-                        color: inv.mrn_number ? "#0F172A" : "#94A3B8",
+                        color: inv.mrn_number ? "#f8fafc" : "#64748b",
                       }}
                     >
                       {inv.mrn_number || "—"}
@@ -1634,7 +1666,7 @@ export default function InvoiceList() {
                         textAlign: "right",
                         whiteSpace: "nowrap",
                         fontWeight: 600,
-                        color: inv.total_amount ? "#0F172A" : "#94A3B8",
+                        color: inv.total_amount ? "#ffffff" : "#64748b",
                       }}
                     >
                       {fmtAmount(inv.total_amount)}
@@ -1656,8 +1688,8 @@ export default function InvoiceList() {
                         fontSize: 12,
                         color:
                           inv.po_incoterm || inv.po_incoterm_raw
-                            ? "#334155"
-                            : "#94A3B8",
+                            ? "#cbd5e1"
+                            : "#64748b",
                       }}
                     >
                       {inv.po_incoterm || inv.po_incoterm_raw || "—"}
@@ -1674,7 +1706,7 @@ export default function InvoiceList() {
                     <td
                       style={{
                         ...s.td,
-                        color: "#64748B",
+                        color: "#94a3b8",
                         textAlign: "right",
                         fontWeight: 500,
                       }}
@@ -1697,8 +1729,8 @@ export default function InvoiceList() {
             padding: "16px 24px",
             alignItems: "center",
             fontSize: 13,
-            background: "#FFFFFF",
-            borderTop: "1px solid #E2E8F0",
+            background: "#090d16",
+            borderTop: "1px solid #1e293b",
           }}
         >
           <button
@@ -1708,7 +1740,7 @@ export default function InvoiceList() {
           >
             ← Previous
           </button>
-          <span style={{ color: "#64748B", fontWeight: 500 }}>
+          <span style={{ color: "#94a3b8", fontWeight: 500 }}>
             Page {page} of {totalPages}
             {data?.total_count != null &&
               ` · ${data.total_count} total invoices`}

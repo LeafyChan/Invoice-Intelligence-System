@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";
+const API_BASE =
+  import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE || "";
 
 function formatINR(n) {
   return `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -13,18 +14,18 @@ const STATUS_LABEL = {
   unknown: "Unknown (not in HSN profile)",
 };
 const STATUS_COLOR = {
-  expected: "#15803D",
-  ambiguous: "#854D0E",
-  manual: "#1D4ED8",
-  unknown: "#6B7280",
+  expected: "#34d399",
+  ambiguous: "#fbbf24",
+  manual: "#60a5fa",
+  unknown: "#94a3b8",
 };
 
 export default function ItcSummary({ getToken }) {
-  const [data, setData]       = useState(null);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr]         = useState(null);
+  const [err, setErr] = useState(null);
   const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo]     = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const fetchSummary = useCallback(async () => {
     setLoading(true);
@@ -46,10 +47,14 @@ export default function ItcSummary({ getToken }) {
     }
   }, [getToken, dateFrom, dateTo]);
 
-  useEffect(() => { fetchSummary(); }, [fetchSummary]);
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
 
   const s = styles;
-  const maxVendorAmount = data ? Math.max(1, ...Object.values(data.by_vendor)) : 1;
+  const maxVendorAmount = data
+    ? Math.max(1, ...Object.values(data.by_vendor))
+    : 1;
   const totalByStatus = data
     ? Object.values(data.by_hsn_status).reduce((a, b) => a + b, 0)
     : 0;
@@ -67,27 +72,35 @@ export default function ItcSummary({ getToken }) {
           <input
             type="date"
             value={dateFrom}
-            onChange={e => setDateFrom(e.target.value)}
+            onChange={(e) => setDateFrom(e.target.value)}
             style={s.dateInput}
             aria-label="From date"
           />
-          <span style={{ color: "#9CA3AF", fontSize: 12 }}>to</span>
+          <span style={{ color: "#94a3b8", fontSize: 12 }}>to</span>
           <input
             type="date"
             value={dateTo}
-            onChange={e => setDateTo(e.target.value)}
+            onChange={(e) => setDateTo(e.target.value)}
             style={s.dateInput}
             aria-label="To date"
           />
           {(dateFrom || dateTo) && (
             <button
-              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+              }}
               style={s.clearDatesBtn}
             >
               Clear
             </button>
           )}
-          <button onClick={fetchSummary} disabled={loading} style={s.refreshBtn} title="Refresh">
+          <button
+            onClick={fetchSummary}
+            disabled={loading}
+            style={s.refreshBtn}
+            title="Refresh"
+          >
             ↻ Refresh
           </button>
         </div>
@@ -96,22 +109,25 @@ export default function ItcSummary({ getToken }) {
       {err && (
         <div style={s.errBanner}>
           Failed to load ITC summary: {err}
-          <button onClick={fetchSummary} style={s.retryBtn}>Retry</button>
+          <button onClick={fetchSummary} style={s.retryBtn}>
+            Retry
+          </button>
         </div>
       )}
 
-      {loading && !data && (
-        <div style={s.loadingBox}>Loading…</div>
-      )}
+      {loading && !data && <div style={s.loadingBox}>Loading…</div>}
 
       {!loading && data && (
         <>
           {/* ── Total card ── */}
           <div style={s.totalCard}>
             <div style={s.totalLabel}>Total claimable ITC</div>
-            <div style={s.totalAmount}>{formatINR(data.total_claimable_itc)}</div>
+            <div style={s.totalAmount}>
+              {formatINR(data.total_claimable_itc)}
+            </div>
             <div style={s.totalMeta}>
-              Across {data.line_items_counted} line item{data.line_items_counted !== 1 ? "s" : ""}
+              Across {data.line_items_counted} line item
+              {data.line_items_counted !== 1 ? "s" : ""}
             </div>
             <div style={s.totalNote}>{data.note}</div>
           </div>
@@ -121,19 +137,38 @@ export default function ItcSummary({ getToken }) {
             <div style={s.panel}>
               <div style={s.panelTitle}>By HSN profile status</div>
               {Object.entries(data.by_hsn_status).map(([status, amount]) => {
-                const pct = totalByStatus > 0 ? (amount / totalByStatus) * 100 : 0;
+                const pct =
+                  totalByStatus > 0 ? (amount / totalByStatus) * 100 : 0;
                 return (
                   <div key={status} style={s.statusRow}>
                     <div style={s.statusRowTop}>
-                      <span style={{ color: STATUS_COLOR[status], fontWeight: 600, fontSize: 12 }}>
+                      <span
+                        style={{
+                          color: STATUS_COLOR[status],
+                          fontWeight: 600,
+                          fontSize: 12,
+                        }}
+                      >
                         {STATUS_LABEL[status]}
                       </span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "#111318" }}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "#f8fafc",
+                        }}
+                      >
                         {formatINR(amount)}
                       </span>
                     </div>
                     <div style={s.barTrack}>
-                      <div style={{ ...s.barFill, width: `${pct}%`, background: STATUS_COLOR[status] }} />
+                      <div
+                        style={{
+                          ...s.barFill,
+                          width: `${pct}%`,
+                          background: STATUS_COLOR[status],
+                        }}
+                      />
                     </div>
                   </div>
                 );
@@ -141,8 +176,8 @@ export default function ItcSummary({ getToken }) {
               {data.by_hsn_status.unknown > 0 && (
                 <p style={s.helperNote}>
                   "Unknown" line items have an HSN code not in your saved
-                  business profile (Settings → Business profile). Add it
-                  there if it's a normal purchase for your business.
+                  business profile (Settings → Business profile). Add it there
+                  if it's a normal purchase for your business.
                 </p>
               )}
             </div>
@@ -156,11 +191,19 @@ export default function ItcSummary({ getToken }) {
                 Object.entries(data.by_vendor).map(([vendor, amount]) => (
                   <div key={vendor} style={s.vendorRow}>
                     <div style={s.vendorRowTop}>
-                      <span style={s.vendorName} title={vendor}>{vendor}</span>
+                      <span style={s.vendorName} title={vendor}>
+                        {vendor}
+                      </span>
                       <span style={s.vendorAmount}>{formatINR(amount)}</span>
                     </div>
                     <div style={s.barTrack}>
-                      <div style={{ ...s.barFill, width: `${(amount / maxVendorAmount) * 100}%`, background: "#312E81" }} />
+                      <div
+                        style={{
+                          ...s.barFill,
+                          width: `${(amount / maxVendorAmount) * 100}%`,
+                          background: "#6366f1",
+                        }}
+                      />
                     </div>
                   </div>
                 ))
@@ -172,12 +215,14 @@ export default function ItcSummary({ getToken }) {
           {data.ambiguous_lines_needing_review.length > 0 && (
             <div style={s.ambiguousPanel}>
               <div style={s.ambiguousTitle}>
-                ⚠ {data.ambiguous_lines_needing_review.length} line item(s) flagged ambiguous
+                ⚠ {data.ambiguous_lines_needing_review.length} line item(s)
+                flagged ambiguous
               </div>
               <p style={s.ambiguousHint}>
-                These use an HSN code your business profile marked "watch — classify
-                on first use" (e.g. could be raw material or a fixed asset depending on
-                how it's actually used). Included in the total above, but worth a look.
+                These use an HSN code your business profile marked "watch —
+                classify on first use" (e.g. could be raw material or a fixed
+                asset depending on how it's actually used). Included in the
+                total above, but worth a look.
               </p>
               <table style={s.ambiguousTable}>
                 <thead>
@@ -190,9 +235,19 @@ export default function ItcSummary({ getToken }) {
                 <tbody>
                   {data.ambiguous_lines_needing_review.map((row, i) => (
                     <tr key={i}>
-                      <td style={s.ambiguousTd}><code>{row.hsn_code || "—"}</code></td>
+                      <td style={s.ambiguousTd}>
+                        <code style={{ color: "#fbbf24" }}>
+                          {row.hsn_code || "—"}
+                        </code>
+                      </td>
                       <td style={s.ambiguousTd}>{formatINR(row.claimable)}</td>
-                      <td style={{ ...s.ambiguousTd, fontSize: 11, color: "#9CA3AF" }}>
+                      <td
+                        style={{
+                          ...s.ambiguousTd,
+                          fontSize: 11,
+                          color: "#94a3b8",
+                        }}
+                      >
                         {row.invoice_id}
                       </td>
                     </tr>
@@ -211,11 +266,11 @@ const styles = {
   root: {
     flex: 1,
     overflow: "auto",
-    background: "#F7F8FA",
+    background: "#020617",
     padding: "28px 24px",
     fontFamily: "Inter, system-ui, -apple-system, sans-serif",
     fontSize: 13,
-    color: "#111318",
+    color: "#f8fafc",
   },
   header: {
     display: "flex",
@@ -229,56 +284,59 @@ const styles = {
     margin: "0 0 4px",
     fontSize: 18,
     fontWeight: 700,
-    color: "#111318",
-    letterSpacing: "-0.01em",
+    color: "#ffffff",
+    letterSpacing: "-0.025em",
   },
   subheading: {
     margin: 0,
-    fontSize: 13,
-    color: "#6B7280",
+    fontSize: 12,
+    color: "#94a3b8",
   },
   dateFilters: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
     flexWrap: "wrap",
   },
   dateInput: {
-    border: "1px solid #D1D5DB",
-    borderRadius: 6,
-    padding: "6px 8px",
+    border: "1px solid #1e293b",
+    borderRadius: 8,
+    padding: "7px 10px",
     fontSize: 12,
     fontFamily: "inherit",
-    background: "#fff",
-    color: "#111318",
+    background: "#090d16",
+    color: "#f8fafc",
+    outline: "none",
   },
   clearDatesBtn: {
     background: "none",
     border: "none",
-    color: "#6B7280",
+    color: "#94a3b8",
     fontSize: 12,
     cursor: "pointer",
     fontFamily: "inherit",
     textDecoration: "underline",
   },
   refreshBtn: {
-    background: "#fff",
-    border: "1px solid #312E81",
-    borderRadius: 6,
-    color: "#312E81",
-    fontSize: 12,
-    fontWeight: 500,
-    padding: "6px 12px",
+    background: "#6366f1",
+    border: "none",
+    borderRadius: 8,
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: 600,
+    padding: "7px 14px",
     cursor: "pointer",
     fontFamily: "inherit",
     whiteSpace: "nowrap",
+    boxShadow: "0 4px 12px rgba(99, 102, 241, 0.3)",
+    transition: "all 0.15s ease",
   },
   errBanner: {
-    background: "#FEF2F2",
-    border: "1px solid #FECACA",
+    background: "rgba(244, 63, 94, 0.1)",
+    border: "1px solid rgba(244, 63, 94, 0.3)",
     borderRadius: 8,
-    color: "#B91C1C",
-    padding: "10px 14px",
+    color: "#fda4af",
+    padding: "12px 16px",
     marginBottom: 16,
     fontSize: 13,
     display: "flex",
@@ -286,30 +344,32 @@ const styles = {
     gap: 12,
   },
   retryBtn: {
-    background: "none",
-    border: "1px solid #B91C1C",
+    background: "#f43f5e",
+    border: "none",
     borderRadius: 6,
-    color: "#B91C1C",
-    padding: "3px 10px",
+    color: "#fff",
+    padding: "4px 12px",
     fontSize: 12,
     cursor: "pointer",
     fontFamily: "inherit",
   },
   loadingBox: {
-    color: "#9CA3AF",
+    color: "#94a3b8",
     fontSize: 13,
     padding: "40px 0",
     textAlign: "center",
   },
   totalCard: {
-    background: "#312E81",
+    background: "linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)",
+    border: "1px solid rgba(99, 102, 241, 0.3)",
     borderRadius: 12,
     padding: "24px 28px",
     marginBottom: 20,
     color: "#fff",
+    boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5)",
   },
   totalLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 600,
     textTransform: "uppercase",
     letterSpacing: "0.05em",
@@ -342,35 +402,36 @@ const styles = {
     marginBottom: 20,
   },
   panel: {
-    background: "#fff",
-    border: "1px solid #E5E7EB",
-    borderRadius: 10,
-    padding: "18px 20px",
+    background: "#090d16",
+    border: "1px solid #1e293b",
+    borderRadius: 12,
+    padding: "20px",
+    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)",
   },
   panelTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 600,
     textTransform: "uppercase",
-    letterSpacing: "0.04em",
-    color: "#6B7280",
-    marginBottom: 14,
+    letterSpacing: "0.05em",
+    color: "#94a3b8",
+    marginBottom: 16,
   },
-  statusRow: { marginBottom: 14 },
+  statusRow: { marginBottom: 16 },
   statusRowTop: {
     display: "flex",
     justifyContent: "space-between",
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  vendorRow: { marginBottom: 12 },
+  vendorRow: { marginBottom: 14 },
   vendorRowTop: {
     display: "flex",
     justifyContent: "space-between",
     gap: 10,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   vendorName: {
     fontSize: 12,
-    color: "#374151",
+    color: "#cbd5e1",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -379,12 +440,12 @@ const styles = {
   vendorAmount: {
     fontSize: 12,
     fontWeight: 600,
-    color: "#111318",
+    color: "#f8fafc",
     whiteSpace: "nowrap",
   },
   barTrack: {
     height: 6,
-    background: "#F3F4F6",
+    background: "#1e293b",
     borderRadius: 3,
     overflow: "hidden",
   },
@@ -394,32 +455,32 @@ const styles = {
   },
   emptyText: {
     fontSize: 12,
-    color: "#9CA3AF",
+    color: "#94a3b8",
   },
   helperNote: {
     fontSize: 11,
-    color: "#6B7280",
+    color: "#94a3b8",
     lineHeight: 1.5,
-    marginTop: 10,
-    paddingTop: 10,
-    borderTop: "1px dashed #E5E7EB",
+    marginTop: 14,
+    paddingTop: 12,
+    borderTop: "1px dashed #1e293b",
   },
   ambiguousPanel: {
-    background: "#FFFBEB",
-    border: "1px solid #FDE68A",
-    borderRadius: 10,
-    padding: "18px 20px",
+    background: "rgba(245, 158, 11, 0.08)",
+    border: "1px solid rgba(245, 158, 11, 0.3)",
+    borderRadius: 12,
+    padding: "20px",
   },
   ambiguousTitle: {
     fontSize: 13,
     fontWeight: 700,
-    color: "#92400E",
-    marginBottom: 4,
+    color: "#fbbf24",
+    marginBottom: 6,
   },
   ambiguousHint: {
-    margin: "0 0 12px",
+    margin: "0 0 14px",
     fontSize: 12,
-    color: "#92400E",
+    color: "#fde68a",
     lineHeight: 1.5,
   },
   ambiguousTable: {
@@ -429,13 +490,14 @@ const styles = {
   },
   ambiguousTh: {
     textAlign: "left",
-    padding: "6px 10px",
+    padding: "8px 10px",
     fontWeight: 600,
-    color: "#92400E",
-    borderBottom: "1px solid #FDE68A",
+    color: "#fbbf24",
+    borderBottom: "1px solid rgba(245, 158, 11, 0.3)",
   },
   ambiguousTd: {
-    padding: "6px 10px",
-    borderBottom: "1px solid #FEF3C7",
+    padding: "8px 10px",
+    borderBottom: "1px solid rgba(245, 158, 11, 0.15)",
+    color: "#f8fafc",
   },
 };
