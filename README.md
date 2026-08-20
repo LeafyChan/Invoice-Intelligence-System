@@ -391,7 +391,7 @@ Synthetic_B2B_Invoice_generator/  # companion repo
 
 ---
 
-## Phase 2 :- Post-Submission Refinements (July 21–26, 2026)
+## Phase 2 :- Post-Submission Refinements (August 16–19, 2026)
 
 Phase 2 fixed 13 issues identified during live testing and added two major features:
 
@@ -435,7 +435,7 @@ This project is licensed under the [MIT License](./LICENSE). You are free to use
 
 ## Hackathon Submission
 
-This system was submitted to the **APAC Hackathon :- July 2026**. The core pipeline, extraction engine, reconciliation logic, vendor scoring, BigQuery integration, and full React dashboard were built and deployed within the hackathon window. The synthetic document generator was built in parallel during the same period to address the absence of any public Indian B2B document dataset.
+This system was submitted to the **SIH Hackathon :- August 2026**. The core pipeline, extraction engine, reconciliation logic, vendor scoring, BigQuery integration, and full React dashboard were built and deployed within the hackathon window. The synthetic document generator was built in parallel during the same period to address the absence of any public Indian B2B document dataset.
 
 This project is actively being worked on post-submission :- new features, fixes, and improvements are ongoing.
 
